@@ -162,10 +162,10 @@ class async_translation_unit : public translation_unit
             this->col = col;
         }
 
-        std::set<std::string> get()
+        std::set<std::string> get(int timeout)
         {
             // std::lock_guard<std::mutex> lock(this->m);
-            if (results.valid() and results.wait_for(std::chrono::milliseconds(CLANG_COMPLETE_ASYNC_WAIT_MS)) == std::future_status::ready)
+            if (timeout > 0 and results.valid() and results.wait_for(std::chrono::milliseconds(timeout)) == std::future_status::ready)
             {
                 return results.get();
             }
@@ -184,13 +184,13 @@ public:
     {}
 
 
-    std::set<std::string> async_complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
+    std::set<std::string> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
     {
         if (std::make_pair(line, col) != q.get_loc())
         {
             q.set(std::async(std::launch::async, [=]{ return this->complete_at(line, col, "", buffer, len); }), line, col);
         }
-        auto completions = q.get();
+        auto completions = q.get(timeout);
         std::set<std::string> results;
         std::copy_if(completions.begin(), completions.end(), inserter(results, results.begin()), [&](const std::string& x)
         { 
@@ -227,7 +227,7 @@ std::unordered_map<std::string, std::shared_ptr<translation_unit_data>> tus;
 //     return tus[filename]->async_complete_at(line, col, prefix, buffer, len);
 // }
 
-#define DUMP(x) log << #x << ": " << x << std::endl;
+// #define DUMP(x) log << #x << ": " << x << std::endl;
 
 extern "C" {
 const char ** clang_complete_get_completions(
@@ -237,28 +237,39 @@ const char ** clang_complete_get_completions(
         unsigned line, 
         unsigned col, 
         const char * prefix, 
+        int timeout,
         const char * buffer, 
         unsigned len)
 {
     // std::ofstream log("/home/paul/clang_log");
-    // if (buffer != nullptr) DUMP(buffer);
+    // DUMP(len);
+    // log << "Buffer: ";
+    // if (buffer != nullptr)
+    // {
+    //     for(int i=0;i<len;i++)
+    //     {
+    //         // log << "(" << i << ")";
+    //         log << buffer[i];
+    //     }
+    // }
+    // log << std::endl;
     if (tus.find(filename) == tus.end())
     {
         // log << "Create a new translation unit" << std::endl;
         tus[filename] = std::make_shared<translation_unit_data>(filename, args, argv);
     }
     auto tud = tus[filename];
-    tud->last_results = tud->tu.async_complete_at(line, col, prefix, buffer, len);
+    tud->last_results = tud->tu.async_complete_at(line, col, prefix, timeout, buffer, len);
 
     auto overflow = tud->last_results.size() > CLANG_COMPLETE_MAX_RESULTS;
-    if (overflow) printf("Overflow: %lu\n", tud->last_results.size());
+    // if (overflow) printf("Overflow: %lu\n", tud->last_results.size());
 
     auto first = tud->last_results.begin();
     auto last = overflow ? std::next(first, CLANG_COMPLETE_MAX_RESULTS) : tud->last_results.end();
     std::transform(first, last, tud->results, [](const std::string& x) { return x.c_str(); });
 
     tud->results[std::distance(first, last)] = ""; 
-
+    // DUMP(std::distance(first, last));
     return tud->results;
 }
 }
