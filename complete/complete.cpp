@@ -4,6 +4,7 @@
 
 #include <clang-c/Index.h>
 #include <iostream>
+#include <fstream>
 #include <set>
 #include <memory>
 #include <future>
@@ -226,7 +227,7 @@ std::unordered_map<std::string, std::shared_ptr<translation_unit_data>> tus;
 //     return tus[filename]->async_complete_at(line, col, prefix, buffer, len);
 // }
 
-#define DUMP(x) std::cout << #x << ": " << x << std::endl;
+#define DUMP(x) log << #x << ": " << x << std::endl;
 
 extern "C" {
 const char ** clang_complete_get_completions(
@@ -239,8 +240,11 @@ const char ** clang_complete_get_completions(
         const char * buffer, 
         unsigned len)
 {
+    // std::ofstream log("/home/paul/clang_log");
+    // if (buffer != nullptr) DUMP(buffer);
     if (tus.find(filename) == tus.end())
     {
+        // log << "Create a new translation unit" << std::endl;
         tus[filename] = std::make_shared<translation_unit_data>(filename, args, argv);
     }
     auto tud = tus[filename];
