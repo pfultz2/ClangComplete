@@ -14,6 +14,8 @@ extern "C"
         int timeout,
         const char * buffer, 
         unsigned len);
+
+    void clang_complete_free_tu(const char * filename);
 }
 
 #endif
