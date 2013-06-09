@@ -28,8 +28,10 @@ inline bool starts_with(const char *str, const char *pre)
 
 class translation_unit
 {
+    CXIndex index;
     CXTranslationUnit tu;
     const char * filename;
+    std::mutex m;
 
     CXUnsavedFile unsaved_buffer(const char * buffer, unsigned len)
     {
@@ -37,6 +39,15 @@ class translation_unit
         result.Filename = this->filename;
         result.Contents = buffer;
         result.Length = len;
+        return result;
+    }
+
+    static std::string to_std_string(CXString str)
+    {
+        std::string result;
+        const char * s = clang_getCString(str);
+        if (s != nullptr) result = s;
+        clang_disposeString(str);
         return result;
     }
 
@@ -64,16 +75,14 @@ class translation_unit
     template<class F>
     static void for_each_completion_string(CXCompletionResult& c, F f)
     {
-        if ( clang_getCompletionAvailability( c.CompletionString ) != CXAvailability_NotAccessible )
+        if ( clang_getCompletionAvailability( c.CompletionString ) == CXAvailability_Available )
         {
             int num = clang_getNumCompletionChunks(c.CompletionString);
             for(int i=0;i<num;i++)
             {
                 auto str = clang_getCompletionChunkText(c.CompletionString, i);
                 auto kind = clang_getCompletionChunkKind(c.CompletionString, i);
-                const char * s = clang_getCString(str);
-                if (s != nullptr) f(s, kind);
-                clang_disposeString(str);
+                f(to_std_string(str), kind);
             }
         }
     }
@@ -93,29 +102,32 @@ class translation_unit
 public:
     translation_unit(const char * filename, const char ** args, int argv) : filename(filename)
     {
-        CXIndex index = clang_createIndex(1, 1);
+        this->index = clang_createIndex(1, 1);
         this->tu = clang_parseTranslationUnit(index, filename, args, argv, NULL, 0, clang_defaultEditingTranslationUnitOptions());
+        // this->tu = clang_createTranslationUnitFromSourceFile(index, filename, argv, args, 0, NULL);
     }
 
     translation_unit(const translation_unit&) = delete;
 
-
-    // void reparse(const char * buffer, unsigned len)
-    // {
-    //     CXUnsavedFile unsaved_file;
-    //     unsaved_file.Filename = this->filename;
-    //     unsaved_file.Contents = buffer;
-    //     unsaved_file.Length = len;
-    //     clang_reparseTranslationUnit(this->tu, 1, clang_defaultReparseOptions(this->tu));
-    // }
+    void reparse(const char * buffer=nullptr, unsigned len=0)
+    {
+        std::lock_guard<std::mutex> lock(this->m);
+        if (buffer == nullptr) clang_reparseTranslationUnit(this->tu, 0, nullptr, 0);
+        else
+        {
+            auto unsaved = this->unsaved_buffer(buffer, len);
+             clang_reparseTranslationUnit(this->tu, 1, &unsaved, 0);
+        }
+    }
 
     std::set<std::string> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
     {
+        std::lock_guard<std::mutex> lock(this->m);
         std::set<std::string> results;
         for(auto& c:this->completions_at(line, col, buffer, len))
         {
             std::string r;
-            for_each_completion_string(c, [&](const char * s, CXCompletionChunkKind kind)
+            for_each_completion_string(c, [&](const std::string& s, CXCompletionChunkKind kind)
             {
                 if (kind == CXCompletionChunk_TypedText)
                 {
@@ -127,9 +139,27 @@ public:
         return results;
     }
 
+    std::vector<std::string> get_diagnostics()
+    {
+        std::lock_guard<std::mutex> lock(this->m);
+        std::vector<std::string> result;
+        auto n = clang_getNumDiagnostics(this->tu);
+        for(int i=0;i<n;i++)
+        {
+            auto diag = std::shared_ptr<void>(clang_getDiagnostic(this->tu, i), &clang_disposeDiagnostic);
+            if (diag != nullptr and clang_getDiagnosticSeverity(diag.get()) != CXDiagnostic_Ignored)
+            {
+                auto str = clang_formatDiagnostic(diag.get(), clang_defaultDiagnosticDisplayOptions());
+                result.push_back(to_std_string(str));
+            }
+        }
+        return result;
+    }
+    
     ~translation_unit()
     {
-        clang_disposeTranslationUnit(tu);
+        clang_disposeTranslationUnit(this->tu);
+        clang_disposeIndex(this->index);
     }
 };
 
@@ -142,7 +172,7 @@ class async_translation_unit : public translation_unit
 
     struct query
     {
-        std::mutex m;
+        std::timed_mutex m;
         std::future<std::set<std::string>> results_future;
         std::set<std::string> results;
         unsigned line;
@@ -153,7 +183,7 @@ class async_translation_unit : public translation_unit
 
         std::pair<unsigned, unsigned> get_loc()
         {
-            // std::lock_guard<std::mutex> lock(this->m);
+            // std::lock_guard<std::timed_mutex> lock(this->m);
             return std::make_pair(this->line, this->col);
         }
 
@@ -210,11 +240,15 @@ struct translation_unit_data
     {}
 
     async_translation_unit tu;
-    std::set<std::string> last_results;
-    const char * results[CLANG_COMPLETE_MAX_RESULTS+2];
+
+    std::set<std::string> last_completions;
+    const char * completions[CLANG_COMPLETE_MAX_RESULTS+2];
+
+    std::vector<std::string> last_diagnostics;
+    const char * diagnostics[CLANG_COMPLETE_MAX_RESULTS+2];
 };
 
-std::mutex global_mutex;
+std::timed_mutex global_mutex;
 
 std::unordered_map<std::string, std::shared_ptr<translation_unit_data>> tus;
 
@@ -225,6 +259,18 @@ std::shared_ptr<translation_unit_data> get_tud(const char * filename, const char
         tus[filename] = std::make_shared<translation_unit_data>(filename, args, argv);
     }
     return tus[filename];
+}
+
+template<class Range, class Array>
+void export_array(const Range& r, Array& out)
+{
+    auto overflow = r.size() > CLANG_COMPLETE_MAX_RESULTS;
+    
+    auto first = r.begin();
+    auto last = overflow ? std::next(first, CLANG_COMPLETE_MAX_RESULTS) : r.end();
+    std::transform(first, last, out, [](const std::string& x) { return x.c_str(); });
+
+    out[std::distance(first, last)] = ""; 
 }
 
 
@@ -240,24 +286,45 @@ const char ** clang_complete_get_completions(
         const char * buffer, 
         unsigned len)
 {
-    std::lock_guard<std::mutex> lock(global_mutex);
+    static const char * empty_result[1] = { "" };
+    std::unique_lock<std::timed_mutex> lock(global_mutex, std::defer_lock);
+    if (!lock.try_lock_for(std::chrono::milliseconds(10))) return empty_result;
 
     auto tud = get_tud(filename, args, argv);
-    tud->last_results = tud->tu.async_complete_at(line, col, prefix, timeout, buffer, len);
+    tud->last_completions = tud->tu.async_complete_at(line, col, prefix, timeout, buffer, len);
 
-    auto overflow = tud->last_results.size() > CLANG_COMPLETE_MAX_RESULTS;
+    export_array(tud->last_completions, tud->completions);
+
+    return tud->completions;
+}
+
+const char ** clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
+{
+    static const char * empty_result[1] = { "" };
+    std::unique_lock<std::timed_mutex> lock(global_mutex, std::defer_lock);
+    if (!lock.try_lock_for(std::chrono::milliseconds(100))) return empty_result;
+
+    auto tud = get_tud(filename, args, argv);
+    tud->tu.reparse(nullptr, 0);
+
+    tud->last_diagnostics = tud->tu.get_diagnostics();
     
-    auto first = tud->last_results.begin();
-    auto last = overflow ? std::next(first, CLANG_COMPLETE_MAX_RESULTS) : tud->last_results.end();
-    std::transform(first, last, tud->results, [](const std::string& x) { return x.c_str(); });
+    export_array(tud->last_diagnostics, tud->diagnostics);
 
-    tud->results[std::distance(first, last)] = ""; 
-    return tud->results;
+    return tud->diagnostics;
+}
+
+void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len)
+{
+    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    auto tud = get_tud(filename, args, argv);
+
+    tud->tu.reparse(buffer, len);
 }
 
 void clang_complete_free_tu(const char * filename)
 {
-    std::lock_guard<std::mutex> lock(global_mutex);
+    std::lock_guard<std::timed_mutex> lock(global_mutex);
     if (tus.find(filename) != tus.end())
     {
         tus.erase(filename);

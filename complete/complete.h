@@ -15,6 +15,8 @@ extern "C"
         const char * buffer, 
         unsigned len);
 
+    const char ** clang_complete_get_diagnostics(const char * filename, const char ** args, int argv);
+
     void clang_complete_free_tu(const char * filename);
 }
 

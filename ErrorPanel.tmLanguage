@@ -1,0 +1,33 @@
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>fileTypes</key>
+        <array>
+        </array>
+        <key>name</key>
+        <string>ClangCompleteErrorPanel</string>
+        <key>patterns</key>
+        <array>
+            <dict>
+                <key>comment</key>
+                <string>Warnings</string>
+                <key>match</key>
+                <string>^.* warning: .*$</string>
+                <key>name</key>
+                <string>string.quoted.double.c</string>
+            </dict>
+            <dict>
+                <key>comment</key>
+                <string>Errors</string>
+                <key>match</key>
+                <string>^.* error: .*$</string>
+                <key>name</key>
+                <string>keyword.control.c</string>
+            </dict>
+        </array>
+        <key>scopeName</key>
+        <string>text.clangcomplete</string>
+        <key>uuid</key>
+        <string>f91ba7f0-d070-11e2-8b8b-0800200c9a66</string>
+    </dict>
+</plist>
