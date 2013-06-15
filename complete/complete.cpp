@@ -19,6 +19,18 @@
 // std::ofstream dump_log("/home/paul/clang_log");
 // #define DUMP(x) dump_log << std::string(__PRETTY_FUNCTION__) << ": " << #x << " = " << x << std::endl;
 
+// An improved async, that doesn't block
+template< class Function, class... Args>
+std::future<typename std::result_of<Function(Args...)>::type>
+detach_async( Function&& f, Args&&... args )
+{
+    typedef typename std::result_of<Function(Args...)>::type result_type;
+    std::packaged_task<result_type(Args...)> task(std::forward<Function>(f));
+    auto fut = task.get_future(); 
+    std::thread(std::move(task)).detach();
+    return std::move(fut);
+}
+
 inline bool starts_with(const char *str, const char *pre)
 {
     size_t lenpre = strlen(pre),
@@ -217,7 +229,15 @@ public:
     {
         if (std::make_pair(line, col) != q.get_loc())
         {
-            this->q.set(std::async(std::launch::async, [=]{ return this->complete_at(line, col, "", buffer, len); }), line, col);
+            std::string buffer_as_string(buffer, buffer+len);
+            this->q.set(detach_async([=]
+            {
+                // TODO: Should we always reparse?
+                // this->reparse(buffer, len);
+                auto b = buffer_as_string.c_str();
+                if (buffer == nullptr) b = nullptr;
+                return this->complete_at(line, col, "", b, buffer_as_string.length()); 
+            }), line, col);
         }
         auto completions = q.get(timeout);
         std::set<std::string> results;
@@ -228,6 +248,7 @@ public:
         return results;
     }
 };
+
 
 
 #ifndef CLANG_COMPLETE_MAX_RESULTS
@@ -292,7 +313,7 @@ const char ** clang_complete_get_completions(
 
     auto tud = get_tud(filename, args, argv);
     tud->last_completions = tud->tu.async_complete_at(line, col, prefix, timeout, buffer, len);
-
+    
     export_array(tud->last_completions, tud->completions);
 
     return tud->completions;
@@ -302,7 +323,7 @@ const char ** clang_complete_get_diagnostics(const char * filename, const char *
 {
     static const char * empty_result[1] = { "" };
     std::unique_lock<std::timed_mutex> lock(global_mutex, std::defer_lock);
-    if (!lock.try_lock_for(std::chrono::milliseconds(100))) return empty_result;
+    if (!lock.try_lock_for(std::chrono::milliseconds(250))) return empty_result;
 
     auto tud = get_tud(filename, args, argv);
     tud->tu.reparse(nullptr, 0);

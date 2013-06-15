@@ -53,37 +53,72 @@ def free_tu(filename):
     complete.clang_complete_free_tu(filename.encode('utf-8'))
 
 
+
+#
+#
+# Retrieve include files
+#
+#
+
+project_includes = {}
+
+def search_include(path):
+    start = len(path)
+    if path[-1] is not '/': start = start + 1
+    result = []
+    for root, dirs, filenames in os.walk(path):
+        for f in filenames:
+            full_name = os.path.join(root, f)
+            result.append(full_name[start:])
+    return result
+
+# def find_includes(project_path, options):
+
+
+
+
 #
 #
 # Retrieve options from cmake 
 #
 #
-def parse_flags(f):
+def parse_flags(f, pflags=[]):
     flags = []
+    flag_set = set(pflags)
+    def check_include(word):
+        if word.startswith('-I') or word.startswith("-D"):
+            return word not in flag_set
+        else:
+            return True
+
     data = open(f).readlines()
     whitespace = re.compile('\s')
     for line in open(f).readlines():
         if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES'):
-            flags.extend(line[line.index('=')+1:].split())
+            words = line[line.index('=')+1:].split()
+            flags.extend([word for word in words if check_include(word)])
     return flags
 
 def accumulate_options(path):
     flags = []
     for root, dirs, filenames in os.walk(path):
         for f in filenames:
-            if f.endswith('flags.make'): flags.extend(parse_flags(os.path.join(root, f)))
+            if f.endswith('flags.make'): flags.extend(parse_flags(os.path.join(root, f), flags))
     return flags
 
 project_options = {}
 
 def get_options(project_path):
     if project_path in project_options: return project_options[project_path]
-    additional_options = ['-Wno-c++11-narrowing', '-D__STRICT_ANSI__', '-DQT_NO_DEBUG', '-isystem', '/usr/local/lib/clang/3.3/include']
+
+    additional_options = ['-Wno-c++11-narrowing', '-D__STRICT_ANSI__', '-isystem', '/usr/local/lib/clang/3.3/include']
     build_dir = os.path.join(project_path, "build")
     if os.path.exists(build_dir):
         project_options[project_path] = ['-x', 'c++'] + accumulate_options(build_dir) + additional_options
     else:
         project_options[project_path] = ['-x', 'c++'] + ["-std=c++11"] + additional_options
+
+    # print(project_path, project_options[project_path])
     return project_options[project_path]
 
 
@@ -194,6 +229,7 @@ def is_member_completion(view, caret):
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout, args=[]):
+        print("complete_at", prefix)
         filename = view.file_name()
         if not is_supported_language(view):
             return []
@@ -214,35 +250,52 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         
         return get_diagnostics(filename, args)
 
+    def show_diagnostics(self, view):
+        project_path = view.window().folders()[0]
+        args = get_options(project_path)
+        print("show_diagnostics", len(args))
+        # for arg in args:
+        #     if project_path in arg: print(arg)
+        output = '\n'.join(self.diagnostics(view, args))
+        clang_error_panel.set_data(output)
+        window = view.window()
+        if not window is None and len(output) > 1:
+            window.run_command("clang_toggle_panel", {"show": True})
+
 
     def on_post_text_command(self, view, name, args):
         global timer
 
         if 'delete' in name: return
         
-        pos = view.sel()[0].begin()
         if (timer is not None): timer.cancel()
-        timer = Timer(0.1, lambda: self.complete_at(view, "", pos, 0))
+        pos = view.sel()[0].begin()
+        timer = Timer(0.5, lambda: self.complete_at(view, "", pos, 0))
         timer.start()
         
 
     def on_query_completions(self, view, prefix, locations):
-        # print("on_query_completions")
+        if not is_supported_language(view):
+            return []
+            
         completions = self.complete_at(view, prefix, locations[0], 200)
-        return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
+        print("on_query_completions:", prefix, len(completions))
+        if (timer is not None): timer.cancel()
+        return ([(c, c) for c in completions])
+        # return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
 
     def on_activated_async(self, view):
-        self.complete_at(view, "", view.sel()[0].begin(), 0, get_options(view.window().folders()[0]))
+        if (timer is not None): timer.cancel()
+        
+        # self.show_diagnostics(view, args)
+        self.complete_at(view, "", view.sel()[0].begin(), 0)
 
     def on_post_save_async(self, view):
+        if (timer is not None): timer.cancel()
         filename = view.file_name()
         if not is_supported_language(view): return
         
-        output = '\n'.join(self.diagnostics(view))
-        clang_error_panel.set_data(output)
-        window = view.window()
-        if not window is None and len(output) > 1:
-          window.run_command("clang_toggle_panel", {"show": True})
+        self.show_diagnostics(view)
         
         pos = view.sel()[0].begin()
         self.complete_at(view, "", pos, 0)
