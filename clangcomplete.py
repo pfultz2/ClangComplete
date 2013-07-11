@@ -89,7 +89,7 @@ def parse_flags(f, pflags=[]):
         if word.startswith('-I') or word.startswith("-D"):
             return word not in flag_set
         else:
-            return True
+            return word != '-g'
 
     data = open(f).readlines()
     whitespace = re.compile('\s')
@@ -111,7 +111,7 @@ project_options = {}
 def get_options(project_path):
     if project_path in project_options: return project_options[project_path]
 
-    additional_options = ['-Wno-c++11-narrowing', '-D__STRICT_ANSI__', '-isystem', '/usr/local/lib/clang/3.3/include']
+    additional_options = ['-Wno-c++11-narrowing', '-D__STRICT_ANSI__', '-DQT_NO_DEBUG', '-isystem', '/usr/local/lib/clang/3.3/include']
     build_dir = os.path.join(project_path, "build")
     if os.path.exists(build_dir):
         project_options[project_path] = ['-x', 'c++'] + accumulate_options(build_dir) + additional_options
@@ -121,6 +121,9 @@ def get_options(project_path):
     # print(project_path, project_options[project_path])
     return project_options[project_path]
 
+class ClangClearOptions(sublime_plugin.TextCommand):
+    def run(self, edit, data):
+        project_options = {}
 
 #
 #
@@ -228,7 +231,11 @@ def is_member_completion(view, caret):
     return False
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
-    def complete_at(self, view, prefix, location, timeout, args=[]):
+    def get_args(self, view):
+        project_path = view.window().folders()[0]
+        return get_options(project_path)
+
+    def complete_at(self, view, prefix, location, timeout):
         print("complete_at", prefix)
         filename = view.file_name()
         if not is_supported_language(view):
@@ -239,24 +246,19 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         if view.is_dirty():
             unsaved_buffer = view.substr(sublime.Region(0, view.size()))
 
-        completions = get_completions(filename, args, row+1, col+1, prefix, timeout, unsaved_buffer)
+        completions = get_completions(filename, self.get_args(view), row+1, col+1, prefix, timeout, unsaved_buffer)
 
         return completions;
 
-    def diagnostics(self, view, args=[]):
+    def diagnostics(self, view):
         filename = view.file_name()
         if not is_supported_language(view):
             return []
         
-        return get_diagnostics(filename, args)
+        return get_diagnostics(filename, self.get_args(view))
 
     def show_diagnostics(self, view):
-        project_path = view.window().folders()[0]
-        args = get_options(project_path)
-        print("show_diagnostics", len(args))
-        # for arg in args:
-        #     if project_path in arg: print(arg)
-        output = '\n'.join(self.diagnostics(view, args))
+        output = '\n'.join(self.diagnostics(view))
         clang_error_panel.set_data(output)
         window = view.window()
         if not window is None and len(output) > 1:
@@ -281,8 +283,8 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         completions = self.complete_at(view, prefix, locations[0], 200)
         print("on_query_completions:", prefix, len(completions))
         if (timer is not None): timer.cancel()
-        return ([(c, c) for c in completions])
-        # return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
+        # return ([(c, c) for c in completions])
+        return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
 
     def on_activated_async(self, view):
         if (timer is not None): timer.cancel()

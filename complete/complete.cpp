@@ -116,7 +116,6 @@ public:
     {
         this->index = clang_createIndex(1, 1);
         this->tu = clang_parseTranslationUnit(index, filename, args, argv, NULL, 0, clang_defaultEditingTranslationUnitOptions());
-        // this->tu = clang_createTranslationUnitFromSourceFile(index, filename, argv, args, 0, NULL);
     }
 
     translation_unit(const translation_unit&) = delete;
