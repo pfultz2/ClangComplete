@@ -16,9 +16,52 @@
 
 #include "complete.h"
 
-// std::ofstream dump_log("/home/paul/clang_log");
-// #define DUMP(x) dump_log << std::string(__PRETTY_FUNCTION__) << ": " << #x << " = " << x << std::endl;
+#ifdef CLANG_COMPLETE_LOG
+std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
+#define DUMP(x) dump_log << std::string(__PRETTY_FUNCTION__) << ": " << #x << " = " << x << std::endl
 
+#define TIMER() timer dump_log_timer(true);
+
+#define DUMP_TIMER() DUMP(dump_log_timer)
+
+#else
+
+#define DUMP(x)
+
+#define TIMER()
+
+#define DUMP_TIMER()
+
+#endif
+
+class timer 
+{
+    typedef typename std::conditional<std::chrono::high_resolution_clock::is_steady,
+            std::chrono::high_resolution_clock,
+            std::chrono::steady_clock>::type clock_type;
+    typedef std::chrono::milliseconds milliseconds;
+public:
+    explicit timer(bool run = false)
+    {
+        if (run) this->reset();
+    }
+    void reset()
+    {
+        this->start = clock_type::now();
+    }
+    milliseconds elapsed() const
+    {
+        return std::chrono::duration_cast<milliseconds>(clock_type::now() - this->start);
+    }
+    template <typename Stream>
+    friend Stream& operator<<(Stream& out, const timer& self)
+    {
+        return out << self.elapsed().count();
+    }
+private:
+    clock_type::time_point start;
+};
+ 
 // An improved async, that doesn't block
 template< class Function, class... Args>
 std::future<typename std::result_of<Function(Args...)>::type>
@@ -36,6 +79,29 @@ inline bool starts_with(const char *str, const char *pre)
     size_t lenpre = strlen(pre),
            lenstr = strlen(str);
     return lenstr < lenpre ? false : strncmp(pre, str, lenpre) == 0;
+}
+
+inline bool istarts_with(const std::string& str, const std::string& pre)
+{
+    return str.length() < pre.length() ? false : 
+        std::equal(pre.begin(), pre.end(), str.begin(), [](char a, char b) { return std::tolower(a) == std::tolower(b); });
+}
+
+std::string get_line_at(const std::string& str, unsigned int line)
+{
+    int n = 1;
+    std::string::size_type pos = 0;
+    std::string::size_type prev = 0;
+    while ((pos = str.find('\n', prev)) != std::string::npos)
+    {
+        if (n == line) return str.substr(prev, pos - prev);
+        prev = pos + 1;
+        n++;
+    }
+
+    // To get the last line
+    if (n == line) return str.substr(prev);
+    else return "";
 }
 
 class translation_unit
@@ -111,11 +177,22 @@ class translation_unit
             return clang_codeCompleteAt(this->tu, this->filename, line, col, &unsaved, 1, CXCodeComplete_IncludeMacros);
         }
     }
+
+    void unsafe_reparse(const char * buffer=nullptr, unsigned len=0)
+    {
+        if (buffer == nullptr) clang_reparseTranslationUnit(this->tu, 0, nullptr, clang_defaultReparseOptions(this->tu));
+        else
+        {
+            auto unsaved = this->unsaved_buffer(buffer, len);
+            clang_reparseTranslationUnit(this->tu, 1, &unsaved, clang_defaultReparseOptions(this->tu));
+        }
+    }
 public:
     translation_unit(const char * filename, const char ** args, int argv) : filename(filename)
     {
         this->index = clang_createIndex(1, 1);
         this->tu = clang_parseTranslationUnit(index, filename, args, argv, NULL, 0, clang_defaultEditingTranslationUnitOptions());
+        detach_async([=]() { this->reparse(); });
     }
 
     translation_unit(const translation_unit&) = delete;
@@ -123,17 +200,13 @@ public:
     void reparse(const char * buffer=nullptr, unsigned len=0)
     {
         std::lock_guard<std::mutex> lock(this->m);
-        if (buffer == nullptr) clang_reparseTranslationUnit(this->tu, 0, nullptr, 0);
-        else
-        {
-            auto unsaved = this->unsaved_buffer(buffer, len);
-             clang_reparseTranslationUnit(this->tu, 1, &unsaved, 0);
-        }
+        this->unsafe_reparse(buffer, len);
     }
 
     std::set<std::string> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
     {
         std::lock_guard<std::mutex> lock(this->m);
+        TIMER();
         std::set<std::string> results;
         for(auto& c:this->completions_at(line, col, buffer, len))
         {
@@ -147,6 +220,11 @@ public:
             });
             if (!r.empty() and starts_with(r.c_str(), prefix)) results.insert(r);
         }
+        // Perhaps a reparse can help rejuvenate clang?
+        if (results.size() == 0) this->unsafe_reparse(buffer, len);
+        DUMP(results.size());
+        DUMP_TIMER();
+        // if (buffer != nullptr) dump_log << get_line_at(std::string(buffer, len), line) << std::endl;
         return results;
     }
 
@@ -163,6 +241,11 @@ public:
                 auto str = clang_formatDiagnostic(diag.get(), clang_defaultDiagnosticDisplayOptions());
                 result.push_back(to_std_string(str));
             }
+            // else if (diag != nullptr) 
+            // {
+            //     auto str = clang_formatDiagnostic(diag.get(), clang_defaultDiagnosticDisplayOptions());
+            //     DUMP(to_std_string(str));
+            // }
         }
         return result;
     }
@@ -183,7 +266,6 @@ class async_translation_unit : public translation_unit
 
     struct query
     {
-        std::timed_mutex m;
         std::future<std::set<std::string>> results_future;
         std::set<std::string> results;
         unsigned line;
@@ -194,7 +276,6 @@ class async_translation_unit : public translation_unit
 
         std::pair<unsigned, unsigned> get_loc()
         {
-            // std::lock_guard<std::timed_mutex> lock(this->m);
             return std::make_pair(this->line, this->col);
         }
 
@@ -208,11 +289,19 @@ class async_translation_unit : public translation_unit
 
         std::set<std::string> get(int timeout)
         {
-            if (timeout > 0 and results_future.valid() and results_future.wait_for(std::chrono::milliseconds(timeout)) == std::future_status::ready)
+            if (results_future.valid() and this->ready(timeout))
             {
                 this->results = this->results_future.get();
+                // Force another query if completion results are empty
+                if (this->results.size() == 0) std::tie(line, col) = std::make_pair(0, 0);
             }
             return this->results;
+        }
+
+        bool ready(int timeout = 10)
+        {
+            if (results_future.valid()) return (timeout > 0 and results_future.wait_for(std::chrono::milliseconds(timeout)) == std::future_status::ready);
+            else return true;
         }
 
     };
@@ -226,23 +315,28 @@ public:
 
     std::set<std::string> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
     {
+
         if (std::make_pair(line, col) != q.get_loc())
         {
+            // If we are busy with a query, lets avoid making lots of new queries
+            if (not this->q.ready()) return {};
+            
             std::string buffer_as_string(buffer, buffer+len);
             this->q.set(detach_async([=]
             {
-                // TODO: Should we always reparse?
-                // this->reparse(buffer, len);
                 auto b = buffer_as_string.c_str();
                 if (buffer == nullptr) b = nullptr;
+                // TODO: Should we always reparse?
+                // else this->reparse(b, len);
                 return this->complete_at(line, col, "", b, buffer_as_string.length()); 
             }), line, col);
         }
         auto completions = q.get(timeout);
         std::set<std::string> results;
+        std::string pre = prefix;
         std::copy_if(completions.begin(), completions.end(), inserter(results, results.begin()), [&](const std::string& x)
         { 
-            return starts_with(x.c_str(), prefix); 
+            return istarts_with(x, pre); 
         });
         return results;
     }
@@ -349,6 +443,12 @@ void clang_complete_free_tu(const char * filename)
     {
         tus.erase(filename);
     }
+}
+
+void clang_complete_free_all()
+{
+    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    tus.clear();
 }
 }
 

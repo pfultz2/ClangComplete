@@ -56,29 +56,6 @@ def free_tu(filename):
 
 #
 #
-# Retrieve include files
-#
-#
-
-project_includes = {}
-
-def search_include(path):
-    start = len(path)
-    if path[-1] is not '/': start = start + 1
-    result = []
-    for root, dirs, filenames in os.walk(path):
-        for f in filenames:
-            full_name = os.path.join(root, f)
-            result.append(full_name[start:])
-    return result
-
-# def find_includes(project_path, options):
-
-
-
-
-#
-#
 # Retrieve options from cmake 
 #
 #
@@ -124,6 +101,38 @@ def get_options(project_path):
 class ClangClearOptions(sublime_plugin.TextCommand):
     def run(self, edit, data):
         project_options = {}
+
+#
+#
+# Retrieve include files
+#
+#
+
+project_includes = {}
+
+def search_include(path):
+    start = len(path)
+    if path[-1] is not '/': start = start + 1
+    result = []
+    for root, dirs, filenames in os.walk(path):
+        for f in filenames:
+            full_name = os.path.join(root, f)
+            result.append(full_name[start:])
+    return result
+
+def find_includes(project_path):
+    result = set()
+    is_path = False
+    for option in get_options(project_path):
+        if option == '-isystem': is_path = True
+        else: is_path = False 
+        if option.startswith('-I'): result.update(search_include(option[2:]))
+        if is_path: result.update(search_include(option))
+    project_includes[project_path] = sorted(result)
+
+def complete_includes(project_path, prefix):
+    pass
+
 
 #
 #
@@ -218,7 +227,6 @@ def is_supported_language(view):
 
 
 
-timer = None
 
 member_regex = re.compile(r"(([a-zA-Z_]+[0-9_]*)|([\)\]])+)((\.)|(->))$")
 
@@ -246,6 +254,7 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         if view.is_dirty():
             unsaved_buffer = view.substr(sublime.Region(0, view.size()))
 
+        # completions = get_completions(filename, self.get_args(view), row+1, col+1, "", timeout, unsaved_buffer)
         completions = get_completions(filename, self.get_args(view), row+1, col+1, prefix, timeout, unsaved_buffer)
 
         return completions;
@@ -266,14 +275,13 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
 
 
     def on_post_text_command(self, view, name, args):
-        global timer
-
+        if not is_supported_language(view): return
+        
         if 'delete' in name: return
         
-        if (timer is not None): timer.cancel()
+        # TODO: Adjust position to begining of word boundary
         pos = view.sel()[0].begin()
-        timer = Timer(0.5, lambda: self.complete_at(view, "", pos, 0))
-        timer.start()
+        self.complete_at(view, "", pos, 0)
         
 
     def on_query_completions(self, view, prefix, locations):
@@ -282,18 +290,13 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
             
         completions = self.complete_at(view, prefix, locations[0], 200)
         print("on_query_completions:", prefix, len(completions))
-        if (timer is not None): timer.cancel()
         # return ([(c, c) for c in completions])
         return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
 
     def on_activated_async(self, view):
-        if (timer is not None): timer.cancel()
-        
-        # self.show_diagnostics(view, args)
         self.complete_at(view, "", view.sel()[0].begin(), 0)
 
     def on_post_save_async(self, view):
-        if (timer is not None): timer.cancel()
         filename = view.file_name()
         if not is_supported_language(view): return
         
