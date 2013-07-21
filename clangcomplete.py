@@ -85,15 +85,14 @@ def accumulate_options(path):
 
 project_options = {}
 
-def get_options(project_path):
+def get_options(project_path, additional_options, build_dir, default_options):
     if project_path in project_options: return project_options[project_path]
 
-    additional_options = ['-Wno-c++11-narrowing', '-D__STRICT_ANSI__', '-DQT_NO_DEBUG', '-isystem', '/usr/local/lib/clang/3.3/include']
-    build_dir = os.path.join(project_path, "build")
+    build_dir = os.path.join(project_path, build_dir)
     if os.path.exists(build_dir):
         project_options[project_path] = ['-x', 'c++'] + accumulate_options(build_dir) + additional_options
     else:
-        project_options[project_path] = ['-x', 'c++'] + ["-std=c++11"] + additional_options
+        project_options[project_path] = ['-x', 'c++'] + default_options + additional_options
 
     # print(project_path, project_options[project_path])
     return project_options[project_path]
@@ -239,9 +238,25 @@ def is_member_completion(view, caret):
     return False
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
+    def get_settings(self):
+        return sublime.load_settings("ClangComplete.sublime-settings")
+
+
+    def get_setting(self, view, key, default=None):
+        try:
+            s = view.settings()
+            if s.has("clangcomplete_%s" % key):
+                return s.get("clangcomplete_%s" % key)
+        except:
+            pass
+        return self.get_settings().get(key, default)
+
     def get_args(self, view):
         project_path = view.window().folders()[0]
-        return get_options(project_path)
+        additional_options = self.get_setting(view, "additional_options", [])
+        build_dir = self.get_setting(view, "build_dir", "build")
+        default_options = self.get_setting(view, "default_options", ["-std=c++11"])
+        return get_options(project_path, additional_options, build_dir, default_options)
 
     def complete_at(self, view, prefix, location, timeout):
         print("complete_at", prefix)
@@ -288,10 +303,12 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         if not is_supported_language(view):
             return []
             
-        completions = self.complete_at(view, prefix, locations[0], 200)
+        completions = self.complete_at(view, prefix, locations[0], self.get_setting(view, "timeout", 200))
         print("on_query_completions:", prefix, len(completions))
-        # return ([(c, c) for c in completions])
-        return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
+        if (self.get_setting(view, "inhibit_sublime_completions", True)):
+            return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
+        else:
+            return ([(c, c) for c in completions])
 
     def on_activated_async(self, view):
         self.complete_at(view, "", view.sel()[0].begin(), 0)

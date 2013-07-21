@@ -1,0 +1,20 @@
+[
+    {
+        "caption": "Preferences: ClangComplete Settings – Default",
+        "command": "open_file", "args":
+        {
+            "file": "${packages}/ClangComplete/ClangComplete.sublime-settings"
+        }
+    },
+    {
+        "caption": "Preferences: ClangComplete Settings – User",
+        "command": "open_file", "args":
+        {
+            "file": "${packages}/User/ClangComplete.sublime-settings"
+        }
+    },
+    {
+        "caption": "ClangComplete: Clear cache",
+        "command": "clang_clear_cache"
+    }
+]

@@ -1,0 +1,7 @@
+{
+    "additional_options": ["-Wno-c++11-narrowing", "-D__STRICT_ANSI__", "-DQT_NO_DEBUG", "-isystem", "/usr/local/lib/clang/3.3/include"],
+    "build_dir": "build",
+    "default_options": ["-std=c++11"],
+    "timeout": 200,
+    "inhibit_sublime_completions": true
+}
