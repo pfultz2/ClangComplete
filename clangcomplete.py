@@ -268,6 +268,8 @@ def get_args(view):
 class ClangCompleteGotoDef(sublime_plugin.TextCommand):
     def run(self, edit):
         filename = self.view.file_name()
+        # The view hasnt finsished loading yet
+        if (filename is None): return
         pos = self.view.sel()[0].begin()
         row, col = self.view.rowcol(pos)
         target = get_definition(filename, get_args(self.view), row+1, col+1)
