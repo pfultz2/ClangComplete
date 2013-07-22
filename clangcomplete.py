@@ -19,6 +19,7 @@ complete = cdll.LoadLibrary('%s/complete/libcomplete.so' % current_path)
 
 complete.clang_complete_get_completions.restype = POINTER(c_char_p)
 complete.clang_complete_get_diagnostics.restype = POINTER(c_char_p)
+complete.clang_complete_get_definition.restype = c_char_p
 
 def convert_to_c_string_array(a):
     result = (c_char_p * len(a))()
@@ -46,11 +47,19 @@ def get_diagnostics(filename, args):
     results = complete.clang_complete_get_diagnostics(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
     return convert_from_c_string_array(results)
 
+def get_definition(filename, args, line, col):
+    result = complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
+    return result.decode("utf-8")
+
 def reparse(filename, args):
     complete.clang_complete_reparse(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
 
 def free_tu(filename):
     complete.clang_complete_free_tu(filename.encode('utf-8'))
+
+def free_all():
+    complete.clang_complete_free_all()
+
 
 
 
@@ -237,27 +246,35 @@ def is_member_completion(view, caret):
         return re.search(r"\[[\.\->\s\w\]]+\s+$", line) != None
     return False
 
+def get_settings():
+    return sublime.load_settings("ClangComplete.sublime-settings")
+
+def get_setting(view, key, default=None):
+    try:
+        s = view.settings()
+        if s.has("clangcomplete_%s" % key):
+            return s.get("clangcomplete_%s" % key)
+    except:
+        pass
+    return get_settings().get(key, default)
+
+def get_args(view):
+    project_path = view.window().folders()[0]
+    additional_options = get_setting(view, "additional_options", [])
+    build_dir = get_setting(view, "build_dir", "build")
+    default_options = get_setting(view, "default_options", ["-std=c++11"])
+    return get_options(project_path, additional_options, build_dir, default_options)
+
+class ClangCompleteGotoDef(sublime_plugin.TextCommand):
+    def run(self, edit):
+        filename = self.view.file_name()
+        pos = self.view.sel()[0].begin()
+        row, col = self.view.rowcol(pos)
+        target = get_definition(filename, get_args(self.view), row+1, col+1)
+        if (len(target) is 0): print("Cant find definition")
+        else: self.view.window().open_file(target, sublime.ENCODED_POSITION)
+
 class ClangCompleteCompletion(sublime_plugin.EventListener):
-    def get_settings(self):
-        return sublime.load_settings("ClangComplete.sublime-settings")
-
-
-    def get_setting(self, view, key, default=None):
-        try:
-            s = view.settings()
-            if s.has("clangcomplete_%s" % key):
-                return s.get("clangcomplete_%s" % key)
-        except:
-            pass
-        return self.get_settings().get(key, default)
-
-    def get_args(self, view):
-        project_path = view.window().folders()[0]
-        additional_options = self.get_setting(view, "additional_options", [])
-        build_dir = self.get_setting(view, "build_dir", "build")
-        default_options = self.get_setting(view, "default_options", ["-std=c++11"])
-        return get_options(project_path, additional_options, build_dir, default_options)
-
     def complete_at(self, view, prefix, location, timeout):
         print("complete_at", prefix)
         filename = view.file_name()
@@ -269,8 +286,8 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         if view.is_dirty():
             unsaved_buffer = view.substr(sublime.Region(0, view.size()))
 
-        # completions = get_completions(filename, self.get_args(view), row+1, col+1, "", timeout, unsaved_buffer)
-        completions = get_completions(filename, self.get_args(view), row+1, col+1, prefix, timeout, unsaved_buffer)
+        # completions = get_completions(filename, get_args(view), row+1, col+1, "", timeout, unsaved_buffer)
+        completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, unsaved_buffer)
 
         return completions;
 
@@ -279,7 +296,7 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         if not is_supported_language(view):
             return []
         
-        return get_diagnostics(filename, self.get_args(view))
+        return get_diagnostics(filename, get_args(view))
 
     def show_diagnostics(self, view):
         output = '\n'.join(self.diagnostics(view))
@@ -303,9 +320,9 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         if not is_supported_language(view):
             return []
             
-        completions = self.complete_at(view, prefix, locations[0], self.get_setting(view, "timeout", 200))
+        completions = self.complete_at(view, prefix, locations[0], get_setting(view, "timeout", 200))
         print("on_query_completions:", prefix, len(completions))
-        if (self.get_setting(view, "inhibit_sublime_completions", True)):
+        if (get_setting(view, "inhibit_sublime_completions", True)):
             return ([(c, c) for c in completions], sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
         else:
             return ([(c, c) for c in completions])

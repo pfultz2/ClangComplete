@@ -17,6 +17,8 @@ extern "C"
 
     const char ** clang_complete_get_diagnostics(const char * filename, const char ** args, int argv);
 
+    const char * clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col);
+
     void clang_complete_free_tu(const char * filename);
 
     void clang_complete_free_all();

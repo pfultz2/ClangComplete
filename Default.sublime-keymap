@@ -1,3 +1,7 @@
-{
-    
-}
+[
+    {
+        "command": "clang_complete_goto_def",
+        // "context": [{"key": "clang_supported_language"}],
+        "keys": ["alt+d", "alt+d"]
+    }
+]

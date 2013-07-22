@@ -16,6 +16,8 @@
 
 #include "complete.h"
 
+// #define CLANG_COMPLETE_LOG
+
 #ifdef CLANG_COMPLETE_LOG
 std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
 #define DUMP(x) dump_log << std::string(__PRETTY_FUNCTION__) << ": " << #x << " = " << x << std::endl
@@ -188,6 +190,57 @@ class translation_unit
         }
     }
 public:
+    struct cursor
+    {
+        CXCursor c;
+
+        cursor(CXCursor c) : c(c)
+        {}
+
+        CXCursorKind get_kind()
+        {
+            return clang_getCursorKind(this->c);
+        }
+
+        cursor get_reference()
+        {
+            return cursor(clang_getCursorReferenced(this->c));
+        }
+
+        cursor get_definition()
+        {
+            return cursor(clang_getCursorDefinition(this->c));
+        }
+
+        std::string get_display_name()
+        {
+            return to_std_string(clang_getCursorDisplayName(this->c));
+        }
+
+        CXSourceLocation get_location()
+        {
+            return clang_getCursorLocation(this->c);
+        }
+
+        std::string get_location_path()
+        {
+            CXFile f;
+            unsigned line, col, offset;
+            clang_getSpellingLocation(this->get_location(), &f, &line, &col, &offset);
+            return to_std_string(clang_getFileName(f)) + ":" + std::to_string(line) + ":" + std::to_string(col);
+        }
+
+        std::string get_include_file()
+        {
+            CXFile f = clang_getIncludedFile(this->c);
+            return to_std_string(clang_getFileName(f));
+        }
+
+        bool is_null()
+        {
+            return clang_Cursor_isNull(this->c);
+        }
+    };
     translation_unit(const char * filename, const char ** args, int argv) : filename(filename)
     {
         this->index = clang_createIndex(1, 1);
@@ -196,6 +249,14 @@ public:
     }
 
     translation_unit(const translation_unit&) = delete;
+
+    cursor get_cursor_at(unsigned long line, unsigned long col, const char * name=nullptr)
+    {
+        if (name == nullptr) name = this->filename;
+        CXFile f = clang_getFile(this->tu, name);
+        CXSourceLocation loc = clang_getLocation(this->tu, f, line, col);
+        return cursor(clang_getCursor(this->tu, loc));
+    }
 
     void reparse(const char * buffer=nullptr, unsigned len=0)
     {
@@ -246,6 +307,25 @@ public:
             //     auto str = clang_formatDiagnostic(diag.get(), clang_defaultDiagnosticDisplayOptions());
             //     DUMP(to_std_string(str));
             // }
+        }
+        return result;
+    }
+
+    std::string get_definition(unsigned line, unsigned col)
+    {
+        std::string result;
+        cursor c = this->get_cursor_at(line, col);
+        DUMP(c.get_display_name());
+        cursor ref = c.get_reference();
+        DUMP(ref.is_null());
+        if (!ref.is_null())
+        {
+            DUMP(ref.get_display_name());
+            result = ref.get_location_path();
+        }
+        else if (c.get_kind() == CXCursor_InclusionDirective)
+        {
+            result = c.get_include_file();
         }
         return result;
     }
@@ -360,6 +440,8 @@ struct translation_unit_data
 
     std::vector<std::string> last_diagnostics;
     const char * diagnostics[CLANG_COMPLETE_MAX_RESULTS+2];
+
+    std::string last_definition;
 };
 
 std::timed_mutex global_mutex;
@@ -426,6 +508,16 @@ const char ** clang_complete_get_diagnostics(const char * filename, const char *
     export_array(tud->last_diagnostics, tud->diagnostics);
 
     return tud->diagnostics;
+}
+
+const char * clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
+{
+    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    auto tud = get_tud(filename, args, argv);
+
+    tud->last_definition = tud->tu.get_definition(line, col);
+
+    return tud->last_definition.c_str();
 }
 
 void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len)
