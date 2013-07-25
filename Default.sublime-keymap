@@ -1,7 +1,10 @@
 [
     {
         "command": "clang_complete_goto_def",
-        // "context": [{"key": "clang_supported_language"}],
         "keys": ["alt+d", "alt+d"]
+    },
+    {
+        "command": "clang_complete_clear_cache",
+        "keys": ["alt+d", "alt+c"]
     }
 ]

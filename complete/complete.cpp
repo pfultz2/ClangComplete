@@ -313,6 +313,7 @@ public:
 
     std::string get_definition(unsigned line, unsigned col)
     {
+        std::lock_guard<std::mutex> lock(this->m);
         std::string result;
         cursor c = this->get_cursor_at(line, col);
         DUMP(c.get_display_name());

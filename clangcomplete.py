@@ -51,8 +51,13 @@ def get_definition(filename, args, line, col):
     result = complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
     return result.decode("utf-8")
 
-def reparse(filename, args):
-    complete.clang_complete_reparse(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
+def reparse(filename, args, unsaved_buffer):
+    buffer = None
+    if (unsaved_buffer is not None): buffer = unsaved_buffer.encode("utf-8")
+    buffer_len = 0
+    if (buffer is not None): buffer_len = len(buffer)
+
+    complete.clang_complete_reparse(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), buffer, buffer_len)
 
 def free_tu(filename):
     complete.clang_complete_free_tu(filename.encode('utf-8'))
@@ -77,8 +82,6 @@ def parse_flags(f, pflags=[]):
         else:
             return word != '-g'
 
-    data = open(f).readlines()
-    whitespace = re.compile('\s')
     for line in open(f).readlines():
         if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES'):
             words = line[line.index('=')+1:].split()
@@ -105,10 +108,6 @@ def get_options(project_path, additional_options, build_dir, default_options):
 
     # print(project_path, project_options[project_path])
     return project_options[project_path]
-
-class ClangClearOptions(sublime_plugin.TextCommand):
-    def run(self, edit, data):
-        project_options = {}
 
 #
 #
@@ -150,7 +149,6 @@ def complete_includes(project_path, prefix):
 class ClangTogglePanel(sublime_plugin.WindowCommand):
     def run(self, **args):
         show = args["show"] if "show" in args else None
-        aview = sublime.active_window().active_view()
 
         if show or (show == None and not clang_error_panel.is_visible(self.window)):
             clang_error_panel.open(self.window)
@@ -238,13 +236,13 @@ def is_supported_language(view):
 
 member_regex = re.compile(r"(([a-zA-Z_]+[0-9_]*)|([\)\]])+)((\.)|(->))$")
 
-def is_member_completion(view, caret):
-    line = view.substr(Region(view.line(caret).a, caret))
-    if member_regex.search(line) != None:
-        return True
-    elif get_language(view).startswith("objc"):
-        return re.search(r"\[[\.\->\s\w\]]+\s+$", line) != None
-    return False
+# def is_member_completion(view, caret):
+#     line = view.substr(Region(view.line(caret).a, caret))
+#     if member_regex.search(line) != None:
+#         return True
+#     elif get_language(view).startswith("objc"):
+#         return re.search(r"\[[\.\->\s\w\]]+\s+$", line) != None
+#     return False
 
 def get_settings():
     return sublime.load_settings("ClangComplete.sublime-settings")
@@ -265,15 +263,31 @@ def get_args(view):
     default_options = get_setting(view, "default_options", ["-std=c++11"])
     return get_options(project_path, additional_options, build_dir, default_options)
 
+def get_unsaved_buffer(view):
+    buffer = None
+    if view.is_dirty():
+        buffer = view.substr(sublime.Region(0, view.size()))
+    return buffer
+
+class ClangCompleteClearCache(sublime_plugin.TextCommand):
+    def run(self, edit, data):
+        global project_options
+        project_options = {}
+        free_all()
+
 class ClangCompleteGotoDef(sublime_plugin.TextCommand):
     def run(self, edit):
         filename = self.view.file_name()
         # The view hasnt finsished loading yet
         if (filename is None): return
+
+        reparse(filename, get_args(self.view), get_unsaved_buffer(self.view))
+
         pos = self.view.sel()[0].begin()
         row, col = self.view.rowcol(pos)
         target = get_definition(filename, get_args(self.view), row+1, col+1)
-        if (len(target) is 0): print("Cant find definition")
+
+        if (len(target) is 0): sublime.status_message("Cant find definition")
         else: self.view.window().open_file(target, sublime.ENCODED_POSITION)
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
@@ -284,20 +298,14 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
             return []
 
         row, col = view.rowcol(location - len(prefix))
-        unsaved_buffer = None
-        if view.is_dirty():
-            unsaved_buffer = view.substr(sublime.Region(0, view.size()))
 
         # completions = get_completions(filename, get_args(view), row+1, col+1, "", timeout, unsaved_buffer)
-        completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, unsaved_buffer)
+        completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, get_unsaved_buffer(view))
 
         return completions;
 
     def diagnostics(self, view):
-        filename = view.file_name()
-        if not is_supported_language(view):
-            return []
-        
+        filename = view.file_name()        
         return get_diagnostics(filename, get_args(view))
 
     def show_diagnostics(self, view):
@@ -333,7 +341,6 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         self.complete_at(view, "", view.sel()[0].begin(), 0)
 
     def on_post_save_async(self, view):
-        filename = view.file_name()
         if not is_supported_language(view): return
         
         self.show_diagnostics(view)

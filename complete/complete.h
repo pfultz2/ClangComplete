@@ -19,6 +19,8 @@ extern "C"
 
     const char * clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col);
 
+    void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len);
+
     void clang_complete_free_tu(const char * filename);
 
     void clang_complete_free_all();
