@@ -20,6 +20,7 @@ complete = cdll.LoadLibrary('%s/complete/libcomplete.so' % current_path)
 complete.clang_complete_get_completions.restype = POINTER(c_char_p)
 complete.clang_complete_get_diagnostics.restype = POINTER(c_char_p)
 complete.clang_complete_get_definition.restype = c_char_p
+complete.clang_complete_get_type.restype = c_char_p
 
 def convert_to_c_string_array(a):
     result = (c_char_p * len(a))()
@@ -49,6 +50,10 @@ def get_diagnostics(filename, args):
 
 def get_definition(filename, args, line, col):
     result = complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
+    return result.decode("utf-8")
+
+def get_type(filename, args, line, col):
+    result = complete.clang_complete_get_type(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
     return result.decode("utf-8")
 
 def reparse(filename, args, unsaved_buffer):
@@ -270,8 +275,9 @@ def get_unsaved_buffer(view):
     return buffer
 
 class ClangCompleteClearCache(sublime_plugin.TextCommand):
-    def run(self, edit, data):
+    def run(self, edit):
         global project_options
+        sublime.status_message("Clearing cache...")
         project_options = {}
         free_all()
 
@@ -289,6 +295,20 @@ class ClangCompleteGotoDef(sublime_plugin.TextCommand):
 
         if (len(target) is 0): sublime.status_message("Cant find definition")
         else: self.view.window().open_file(target, sublime.ENCODED_POSITION)
+
+class ClangCompleteShowType(sublime_plugin.TextCommand):
+    def run(self, edit):
+        filename = self.view.file_name()
+        # The view hasnt finsished loading yet
+        if (filename is None): return
+
+        reparse(filename, get_args(self.view), get_unsaved_buffer(self.view))
+
+        pos = self.view.sel()[0].begin()
+        row, col = self.view.rowcol(pos)
+        type = get_type(filename, get_args(self.view), row+1, col+1)
+
+        sublime.status_message(type)
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):

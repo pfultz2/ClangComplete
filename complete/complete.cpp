@@ -212,9 +212,24 @@ public:
             return cursor(clang_getCursorDefinition(this->c));
         }
 
+        cursor get_type()
+        {
+            return cursor(clang_getTypeDeclaration(clang_getCanonicalType(clang_getCursorType(this->c))));
+        }
+
         std::string get_display_name()
         {
             return to_std_string(clang_getCursorDisplayName(this->c));
+        }
+
+        std::string get_spelling()
+        {
+            return to_std_string(clang_getCursorSpelling(this->c));
+        }
+
+        std::string get_type_name()
+        {
+            return to_std_string(clang_getTypeSpelling(clang_getCanonicalType(clang_getCursorType(this->c))));
         }
 
         CXSourceLocation get_location()
@@ -330,6 +345,25 @@ public:
         }
         return result;
     }
+
+    std::string get_type(unsigned line, unsigned col)
+    {
+        std::lock_guard<std::mutex> lock(this->m);
+
+        return this->get_cursor_at(line, col).get_type_name();
+        // cursor c = this->get_cursor_at(line, col);
+        // DUMP(c.get_display_name());
+        // DUMP(c.get_spelling());
+        // cursor ref = c.get_type().get_definition();
+        // if (ref.is_null()) return "null";
+        // else
+        // {
+        //     DUMP(ref.get_spelling());
+        //     DUMP(ref.get_location_path());
+        //     return ref.get_spelling();
+        // }
+
+    }
     
     ~translation_unit()
     {
@@ -443,6 +477,7 @@ struct translation_unit_data
     const char * diagnostics[CLANG_COMPLETE_MAX_RESULTS+2];
 
     std::string last_definition;
+    std::string last_type;
 };
 
 std::timed_mutex global_mutex;
@@ -519,6 +554,16 @@ const char * clang_complete_get_definition(const char * filename, const char ** 
     tud->last_definition = tud->tu.get_definition(line, col);
 
     return tud->last_definition.c_str();
+}
+
+const char * clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
+{
+    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    auto tud = get_tud(filename, args, argv);
+
+    tud->last_type = tud->tu.get_type(line, col);
+
+    return tud->last_type.c_str();
 }
 
 void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len)

@@ -6,5 +6,9 @@
     {
         "command": "clang_complete_clear_cache",
         "keys": ["alt+d", "alt+c"]
+    },
+    {
+        "command": "clang_complete_show_type",
+        "keys": ["alt+d", "alt+t"]
     }
 ]
