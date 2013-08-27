@@ -1,6 +1,14 @@
 import sublime, sublime_plugin
-
+from threading import RLock
 from threading import Timer
+from threading import Condition
+
+from .clang.cindex import Index
+from .clang.cindex import TranslationUnit
+from .clang.cindex import Diagnostic
+from .clang.cindex import Cursor
+from .clang.cindex import CursorKind
+from .clang.cindex import SourceLocation
 
 from ctypes import cdll
 from ctypes import POINTER
@@ -8,67 +16,333 @@ from ctypes import c_char_p
 from ctypes import create_unicode_buffer
 from ctypes import create_string_buffer
 import os, re, sys
-current_path = os.path.dirname(os.path.abspath(__file__))
-complete = cdll.LoadLibrary('%s/complete/libcomplete.so' % current_path)
+
+
+
+class LockedVariable(object):
+    def __init__(self, value, lock=None):
+        self._value = value
+        self._lock = lock if lock else RLock()
+        self._locked = False
+
+    @property
+    def locked(self):
+        return self._locked
+
+    def assign(self, value):
+        with self:
+            self._value = value
+
+    def __enter__(self):
+        self._lock.__enter__()
+        self._locked = True
+        return self._value
+
+    def __exit__(self, *args, **kwargs):
+        self._locked = False
+        return self._lock.__exit__(*args, **kwargs)
+
+def try_call(callback):
+    try:
+        return callback()
+    except:
+        return None
+
+class Future(object):
+    """Represents the result of an asynchronous computation."""
+
+    PENDING                = 1
+    RUNNING                = 2
+    FINISHED               = 5
+
+    def __init__(self):
+        self._condition = Condition()
+        self._state = Future.PENDING
+        self._exception = None
+        self._result = None
+
+    def valid(self):
+        with self._condition:
+            return self._state != Future.PENDING
+
+    def running(self):
+        with self._condition:
+            return self._state == Future.RUNNING
+
+    def done(self, timeout=None):
+        print("done")
+        if timeout != None:
+            with self._condition:
+                if self._state != Future.FINISHED: 
+                    print("done.wait", timeout*0.001)
+                    self._condition.wait(timeout*0.001)
+                    print("done:", self._state)
+        with self._condition:
+            print("Finished")
+            return self._state == Future.FINISHED
+
+    def result(self, timeout=None):
+        print("result")
+        with self._condition:
+            if self._state == Future.FINISHED:
+                return self.__get_result()
+            print("result.wait", timeout*0.001)
+            self._condition.wait(timeout*0.001)
+            print("result:", self._state)
+            if self._state == Future.FINISHED:
+                return self.__get_result()
+            else:
+                return None
+
+    def __get_result(self):
+        print("__get_result", self._exception)
+        if self._exception != None:
+            print("Throw exception")
+            raise self._exception
+        else:
+            return self._result
+
+    def set_running(self):
+        with self._condition:
+            if self._state == Future.PENDING:
+                self._state = Future.RUNNING
+                return True
+            else:
+                raise RuntimeError('Future in unexpected state')
+
+    def set_result(self, result, exception):
+        with self._condition:
+            print("set_result")
+            self._result = result
+            self._exception = exception
+            self._state = Future.FINISHED
+            print("Notify")
+            self._condition.notify_all()
+
+
+class Worker(object):
+    def __init__(self, f, callback):
+        self.f = f
+        self.callback = callback
+
+    def run(self):
+        self.f.set_running()
+        result = None
+        exception = None
+        try:
+            result = self.callback()
+        except Exception as e:
+            print("Exception thrown", e)
+            exception = e
+        self.f.set_result(result, exception)
+
+def async_timeout(callback, delay):
+    f = Future()
+    w = Worker(f, callback)
+    sublime.set_timeout_async(w.run, delay)
+    print("async_timeout")
+    return f
+
+
+def get_typed_text(result):
+    for chunk in result.string:
+        if chunk.isKindTypedText():
+            return chunk.spelling
+
+def format_diagnostic(diag):
+    f = diag.location
+    filename = ""
+    if f.file != None:
+        filename = f.file.name
+
+    return "%s:%d:%d: %s: %s" % (filename, f.line, f.column,
+                                  diag.severityName,
+                                  diag.spelling)
+
+def format_cursor_location(cursor):
+    return "%s:%d:%d" % (cursor.location.file.name, cursor.location.line,
+                         cursor.location.column)
+
+
+class Unit(object):
+    def __init__(self, filename, args):
+        self.filename = filename
+        self.index = Index.create()
+        self.tu = self.index.parse(self.filename, args, None, TranslationUnit.PARSE_PRECOMPILED_PREAMBLE | TranslationUnit.PARSE_CACHE_COMPLETION_RESULTS)
+
+    def reparse(self, buffer=None):
+        if buffer is None: self.tu.reparse()
+        else: self.tu.reparse([(self.filename, buffer)])
+
+    def complete_at(self, line, col, buffer=None):
+        print("complete_at_start")
+        unsaved_files = None
+        if buffer is not None: unsaved_files = [(self.filename, buffer)]
+        completions = set()
+        results = self.tu.codeComplete(self.filename, line, col, unsaved_files, True).results
+        for completion in [get_typed_text(result) for result in results]:
+            completions.add(completion)
+        print("complete_at:", len(completions))
+        return completions
+
+    def get_diagnostics(self):
+        # return [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
+        result = [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
+        print("get_diagnostics", len(result))
+
+    def cursor_at(self, line, col):
+        return Cursor.from_location(self.tu, SourceLocation.from_position(self.tu, self.filename, line, col))
+
+    def get_definition(self, line, col):
+        c = self.cursor_at(line, col)
+        cursor_ref = c.referenced
+        if cursor_ref != None:
+            return format_cursor_location(cursor_ref)
+        # elif c.kind == CursorKind.INCLUSION_DIRECTIVE:
+        #     return c.get_included_file()
+        return ""
+
+def get_sync_completions(locked_tu, line, col, buffer):
+    with locked_tu as tu:
+        tu.complete_at(line, col, buffer)
+
+
+class Query(object):
+    def __init__(self):
+        self.future = Future()
+        self.filename = ''
+        self.line = 0
+        self.col = 0
+
+    def set(self, future, filename, line, col):
+        print("set")
+        self.future = future
+        self.filename = filename
+        self.line = line
+        self.col = col
+
+    def ready(self, timeout=10):
+        if self.future.valid(): return timeout > 0 and self.future.done(timeout)
+        else: return True
+
+    def get(self, timeout):
+        print("get")
+        result = self.future.result(timeout)
+        if result is None: return []
+        else: return result
+
+    def get_completions(self, locked_tu, filename, line, col, prefix, timeout, buffer=None):
+        if ((filename, line, col) != (self.filename, self.col, self.line)):
+            # If we are busy with a query, lets avoid making lots of new queries
+            if not self.ready(): 
+                print("Busy")
+                return []
+            self.set(async_timeout(lambda: get_sync_completions(locked_tu, line, col, buffer), 1), filename, line, col)
+
+        completions = self.get(timeout)
+        return [completion for completion in completions if completion.startswith(prefix)]
+
+completion_query = LockedVariable(Query())
+
+tus = LockedVariable({})
+
+def get_tu(filename, args):
+    with tus as d:
+        if filename not in d: d[filename] = LockedVariable(Unit(filename, args))
+        return d[filename]
+
+def free_tu(filename):
+    with tus as d:
+        if filename in d: del d[filename]
+
+def free_all():
+    with tus as d:
+        d.clear()
+
+def reparse(filename, args, buffer):
+    with get_tu(filename, args) as tu:
+        tu.reparse(buffer)
+
+def get_completions(filename, args, line, col, prefix, timeout, buffer):
+    if completion_query.locked: return []
+    with completion_query as q:
+        return q.get_completions(get_tu(filename, args), filename, line, col, prefix, timeout, buffer)
+
+def get_diagnostics(filename, args):
+    with get_tu(filename, args) as tu:
+        return tu.get_diagnostics()
+
+def get_definition(filename, args, line, col):
+    with get_tu(filename, args) as tu:
+        return tu.get_definition(line, col)
+
+# TODO
+def get_type(filename, args, line, col):
+    with get_tu(filename, args) as tu:
+        return tu.get_definition(line, col)
+
+
 
 #
 #
 # Clang c api wrapper
 #
 #
+# current_path = os.path.dirname(os.path.abspath(__file__))
+# complete = cdll.LoadLibrary('%s/complete/libcomplete.so' % current_path)
 
-complete.clang_complete_get_completions.restype = POINTER(c_char_p)
-complete.clang_complete_get_diagnostics.restype = POINTER(c_char_p)
-complete.clang_complete_get_definition.restype = c_char_p
-complete.clang_complete_get_type.restype = c_char_p
+# complete.clang_complete_get_completions.restype = POINTER(c_char_p)
+# complete.clang_complete_get_diagnostics.restype = POINTER(c_char_p)
+# complete.clang_complete_get_definition.restype = c_char_p
+# complete.clang_complete_get_type.restype = c_char_p
 
-def convert_to_c_string_array(a):
-    result = (c_char_p * len(a))()
-    result[:] = [x.encode('utf-8') for x in a]
-    return result
+# def convert_to_c_string_array(a):
+#     result = (c_char_p * len(a))()
+#     result[:] = [x.encode('utf-8') for x in a]
+#     return result
 
-def convert_from_c_string_array(a):
-    results = []
-    i = 0
-    while(len(a[i]) is not 0):
-        results.append(a[i].decode("utf-8"))
-        i = i + 1
-    return results
+# def convert_from_c_string_array(a):
+#     results = []
+#     i = 0
+#     while(len(a[i]) is not 0):
+#         results.append(a[i].decode("utf-8"))
+#         i = i + 1
+#     return results
 
-def get_completions(filename, args, line, col, prefix, timeout, unsaved_buffer):
-    buffer = None
-    if (unsaved_buffer is not None): buffer = unsaved_buffer.encode("utf-8")
-    buffer_len = 0
-    if (buffer is not None): buffer_len = len(buffer)
+# def get_completions(filename, args, line, col, prefix, timeout, unsaved_buffer):
+#     buffer = None
+#     if (unsaved_buffer is not None): buffer = unsaved_buffer.encode("utf-8")
+#     buffer_len = 0
+#     if (buffer is not None): buffer_len = len(buffer)
 
-    results = complete.clang_complete_get_completions(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col, prefix.encode('utf-8'), timeout, buffer, buffer_len)
-    return convert_from_c_string_array(results)
+#     results = complete.clang_complete_get_completions(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col, prefix.encode('utf-8'), timeout, buffer, buffer_len)
+#     return convert_from_c_string_array(results)
 
-def get_diagnostics(filename, args):
-    results = complete.clang_complete_get_diagnostics(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
-    return convert_from_c_string_array(results)
+# def get_diagnostics(filename, args):
+#     results = complete.clang_complete_get_diagnostics(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
+#     return convert_from_c_string_array(results)
 
-def get_definition(filename, args, line, col):
-    result = complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
-    return result.decode("utf-8")
+# def get_definition(filename, args, line, col):
+#     result = complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
+#     return result.decode("utf-8")
 
-def get_type(filename, args, line, col):
-    result = complete.clang_complete_get_type(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
-    return result.decode("utf-8")
+# def get_type(filename, args, line, col):
+#     result = complete.clang_complete_get_type(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
+#     return result.decode("utf-8")
 
-def reparse(filename, args, unsaved_buffer):
-    buffer = None
-    if (unsaved_buffer is not None): buffer = unsaved_buffer.encode("utf-8")
-    buffer_len = 0
-    if (buffer is not None): buffer_len = len(buffer)
+# def reparse(filename, args, unsaved_buffer):
+#     buffer = None
+#     if (unsaved_buffer is not None): buffer = unsaved_buffer.encode("utf-8")
+#     buffer_len = 0
+#     if (buffer is not None): buffer_len = len(buffer)
 
-    complete.clang_complete_reparse(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), buffer, buffer_len)
+#     complete.clang_complete_reparse(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), buffer, buffer_len)
 
-def free_tu(filename):
-    complete.clang_complete_free_tu(filename.encode('utf-8'))
+# def free_tu(filename):
+#     complete.clang_complete_free_tu(filename.encode('utf-8'))
 
-def free_all():
-    complete.clang_complete_free_all()
+# def free_all():
+#     complete.clang_complete_free_all()
 
 
 
@@ -312,7 +586,7 @@ class ClangCompleteShowType(sublime_plugin.TextCommand):
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):
-        print("complete_at", prefix)
+        print("clang_complete_at", prefix)
         filename = view.file_name()
         if not is_supported_language(view):
             return []
@@ -325,8 +599,10 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         return completions;
 
     def diagnostics(self, view):
-        filename = view.file_name()        
-        return get_diagnostics(filename, get_args(view))
+        filename = view.file_name()   
+        result = get_diagnostics(filename, get_args(view))
+        print("Diagnostics: ", len(result))
+        return result
 
     def show_diagnostics(self, view):
         output = '\n'.join(self.diagnostics(view))
