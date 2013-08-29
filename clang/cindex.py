@@ -1721,7 +1721,7 @@ class CompletionString(ClangObject):
             return "<Availability: %s>" % self
 
     def __len__(self):
-        self.num_chunks
+        return self.num_chunks
 
     @CachedProperty
     def num_chunks(self):
@@ -1778,7 +1778,6 @@ class CCRStructure(Structure):
                 ('numResults', c_int)]
 
     def __len__(self):
-        print("numResults:", self.numResults)
         return self.numResults
 
     def __getitem__(self, key):
