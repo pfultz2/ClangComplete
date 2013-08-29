@@ -3,5 +3,7 @@
     "build_dir": "build",
     "default_options": ["-std=c++11"],
     "timeout": 200,
-    "inhibit_sublime_completions": true
+    "inhibit_sublime_completions": true,
+    "enable_completions": true,
+    "enable_diagnostics": true
 }

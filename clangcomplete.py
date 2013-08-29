@@ -140,14 +140,20 @@ def async_timeout(callback, delay):
     f = Future()
     w = Worker(f, callback)
     sublime.set_timeout_async(w.run, delay)
-    print("async_timeout")
     return f
 
 
 def get_typed_text(result):
+    print("get_typed_text start")
     for chunk in result.string:
         if chunk.isKindTypedText():
             return chunk.spelling
+
+def format_severity(severity):
+    if severity is Diagnostic.Note: return "note"
+    elif severity is Diagnostic.Warning: return "warning"
+    elif severity is Diagnostic.Error: return "error"
+    elif severity is Diagnostic.Fatal: return "fatal error"
 
 def format_diagnostic(diag):
     f = diag.location
@@ -155,9 +161,9 @@ def format_diagnostic(diag):
     if f.file != None:
         filename = f.file.name
 
-    return "%s:%d:%d: %s: %s" % (filename, f.line, f.column,
-                                  diag.severityName,
-                                  diag.spelling)
+    return "%s:%d:%d: %s: %s" % (filename.decode("utf-8"), f.line, f.column,
+                                  format_severity(diag.severity),
+                                  diag.spelling.decode("utf-8"))
 
 def format_cursor_location(cursor):
     return "%s:%d:%d" % (cursor.location.file.name, cursor.location.line,
@@ -180,14 +186,16 @@ class Unit(object):
         if buffer is not None: unsaved_files = [(self.filename, buffer)]
         completions = set()
         results = self.tu.codeComplete(self.filename, line, col, unsaved_files, True).results
-        for completion in [get_typed_text(result) for result in results]:
-            completions.add(completion)
+        print("results", results)
+        # for completion in [get_typed_text(result) for result in results]:
+        #     completions.add(completion)
         print("complete_at:", len(completions))
         return completions
 
     def get_diagnostics(self):
         # return [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
         result = [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
+        return result
         print("get_diagnostics", len(result))
 
     def cursor_at(self, line, col):
@@ -215,7 +223,6 @@ class Query(object):
         self.col = 0
 
     def set(self, future, filename, line, col):
-        print("set")
         self.future = future
         self.filename = filename
         self.line = line
@@ -226,7 +233,6 @@ class Query(object):
         else: return True
 
     def get(self, timeout):
-        print("get")
         result = self.future.result(timeout)
         if result is None: return []
         else: return result
@@ -238,7 +244,7 @@ class Query(object):
                 print("Busy")
                 return []
             self.set(async_timeout(lambda: get_sync_completions(locked_tu, line, col, buffer), 1), filename, line, col)
-
+        print("get_completions:", timeout)
         completions = self.get(timeout)
         return [completion for completion in completions if completion.startswith(prefix)]
 
@@ -263,10 +269,14 @@ def reparse(filename, args, buffer):
     with get_tu(filename, args) as tu:
         tu.reparse(buffer)
 
+# def get_completions(filename, args, line, col, prefix, timeout, buffer):
+#     if completion_query.locked: return []
+#     with completion_query as q:
+#         return q.get_completions(get_tu(filename, args), filename, line, col, prefix, timeout, buffer)
+
 def get_completions(filename, args, line, col, prefix, timeout, buffer):
-    if completion_query.locked: return []
-    with completion_query as q:
-        return q.get_completions(get_tu(filename, args), filename, line, col, prefix, timeout, buffer)
+    with get_tu(filename, args) as tu:
+        return tu.complete_at(line, col, buffer)
 
 def get_diagnostics(filename, args):
     with get_tu(filename, args) as tu:
@@ -586,6 +596,7 @@ class ClangCompleteShowType(sublime_plugin.TextCommand):
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):
+        if not get_setting(view, "enable_completions", True): return []
         print("clang_complete_at", prefix)
         filename = view.file_name()
         if not is_supported_language(view):
@@ -599,6 +610,7 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         return completions;
 
     def diagnostics(self, view):
+        if not get_setting(view, "enable_diagnostics", True): return []
         filename = view.file_name()   
         result = get_diagnostics(filename, get_args(view))
         print("Diagnostics: ", len(result))
@@ -625,7 +637,8 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
     def on_query_completions(self, view, prefix, locations):
         if not is_supported_language(view):
             return []
-            
+        
+
         completions = self.complete_at(view, prefix, locations[0], get_setting(view, "timeout", 200))
         print("on_query_completions:", prefix, len(completions))
         if (get_setting(view, "inhibit_sublime_completions", True)):
