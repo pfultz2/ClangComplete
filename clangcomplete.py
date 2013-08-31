@@ -144,7 +144,13 @@ def async_timeout(callback, delay):
 
 
 def get_typed_text(result):
-    print("get_typed_text start")
+    # print("get_typed_text start")
+    # print(result.kind)
+    # return ""
+    # print(result.obj)
+    print("completionString", result.completionString)
+    print("completionString obj", result.string.obj)
+    print("completionString len", len(result.string))
     for chunk in result.string:
         if chunk.isKindTypedText():
             return chunk.spelling
@@ -173,6 +179,7 @@ def format_cursor_location(cursor):
 class Unit(object):
     def __init__(self, filename, args):
         self.filename = filename
+        if filename is None: self.filename = ""
         self.index = Index.create()
         self.tu = self.index.parse(self.filename, args, None, TranslationUnit.PARSE_PRECOMPILED_PREAMBLE | TranslationUnit.PARSE_CACHE_COMPLETION_RESULTS)
 
@@ -186,17 +193,19 @@ class Unit(object):
         if buffer is not None: unsaved_files = [(self.filename, buffer)]
         completions = set()
         results = self.tu.codeComplete(self.filename, line, col, unsaved_files, True).results
-        print("results", results)
-        # for completion in [get_typed_text(result) for result in results]:
-        #     completions.add(completion)
+        print("results", len(results))
+        # print("results availability", str(results[0].string.availability))
+        # for completion in [get_typed_text(result) for result in results if str(result.string.availability) == "Available"]:
+        for completion in [get_typed_text(result) for result in results]:
+            completions.add(completion)
         print("complete_at:", len(completions))
         return completions
 
     def get_diagnostics(self):
-        # return [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
-        result = [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
-        return result
-        print("get_diagnostics", len(result))
+        return [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
+        # result = [format_diagnostic(diag) for diag in self.tu.diagnostics if diag != None and diag.severity != Diagnostic.Ignored]
+        # return result
+        # print("get_diagnostics", len(result))
 
     def cursor_at(self, line, col):
         return Cursor.from_location(self.tu, SourceLocation.from_position(self.tu, self.filename, line, col))
@@ -280,6 +289,7 @@ def get_completions(filename, args, line, col, prefix, timeout, buffer):
 
 def get_diagnostics(filename, args):
     with get_tu(filename, args) as tu:
+        tu.reparse()
         return tu.get_diagnostics()
 
 def get_definition(filename, args, line, col):
