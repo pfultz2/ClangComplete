@@ -1783,7 +1783,6 @@ class CCRStructure(Structure):
     def __getitem__(self, key):
         if len(self) <= key:
             raise IndexError
-
         return self.results[key]
 
 class CodeCompletionResults(ClangObject):
@@ -1971,7 +1970,7 @@ class TranslationUnit(ClangObject):
                                     args_length, unsaved_array,
                                     len(unsaved_files), options)
 
-        if ptr is None:
+        if not ptr:
             raise TranslationUnitLoadError("Error parsing translation unit.")
 
         return cls(ptr, index=index)
@@ -1993,7 +1992,7 @@ class TranslationUnit(ClangObject):
             index = Index.create()
 
         ptr = conf.lib.clang_createTranslationUnit(index, filename)
-        if ptr is None:
+        if not ptr:
             raise TranslationUnitLoadError(filename)
 
         return cls(ptr=ptr, index=index)
