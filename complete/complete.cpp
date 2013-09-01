@@ -111,7 +111,7 @@ class translation_unit
     CXIndex index;
     CXTranslationUnit tu;
     const char * filename;
-    std::mutex m;
+    std::timed_mutex m;
 
     CXUnsavedFile unsaved_buffer(const char * buffer, unsigned len)
     {
@@ -275,13 +275,13 @@ public:
 
     void reparse(const char * buffer=nullptr, unsigned len=0)
     {
-        std::lock_guard<std::mutex> lock(this->m);
+        std::lock_guard<std::timed_mutex> lock(this->m);
         this->unsafe_reparse(buffer, len);
     }
 
     std::set<std::string> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
     {
-        std::lock_guard<std::mutex> lock(this->m);
+        std::lock_guard<std::timed_mutex> lock(this->m);
         TIMER();
         std::set<std::string> results;
         for(auto& c:this->completions_at(line, col, buffer, len))
@@ -304,9 +304,17 @@ public:
         return results;
     }
 
-    std::vector<std::string> get_diagnostics()
+    std::vector<std::string> get_diagnostics(int timeout=-1)
     {
-        std::lock_guard<std::mutex> lock(this->m);
+        std::unique_lock<std::timed_mutex> lock(this->m, std::defer_lock);
+        if (timeout < 0)
+        {
+            if (!lock.try_lock_for(std::chrono::milliseconds(timeout))) return {};
+        }
+        else
+        {
+            lock.lock();
+        }
         std::vector<std::string> result;
         auto n = clang_getNumDiagnostics(this->tu);
         for(int i=0;i<n;i++)
@@ -328,7 +336,7 @@ public:
 
     std::string get_definition(unsigned line, unsigned col)
     {
-        std::lock_guard<std::mutex> lock(this->m);
+        std::lock_guard<std::timed_mutex> lock(this->m);
         std::string result;
         cursor c = this->get_cursor_at(line, col);
         DUMP(c.get_display_name());
@@ -348,7 +356,7 @@ public:
 
     std::string get_type(unsigned line, unsigned col)
     {
-        std::lock_guard<std::mutex> lock(this->m);
+        std::lock_guard<std::timed_mutex> lock(this->m);
 
         return this->get_cursor_at(line, col).get_type_name();
         // cursor c = this->get_cursor_at(line, col);
@@ -420,7 +428,7 @@ class async_translation_unit : public translation_unit
         }
 
     };
-
+    std::timed_mutex async_mutex;
     query q;
 
 public:
@@ -430,6 +438,8 @@ public:
 
     std::set<std::string> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
     {
+        std::unique_lock<std::timed_mutex> lock(this->async_mutex, std::defer_lock);
+        if (!lock.try_lock_for(std::chrono::milliseconds(20))) return {};
 
         if (std::make_pair(line, col) != q.get_loc())
         {
@@ -463,13 +473,43 @@ public:
 #define CLANG_COMPLETE_MAX_RESULTS 8192
 #endif
 
+template<class T>
+struct locked_var
+{
+    std::shared_ptr<T> var;
+
+    locked_var(std::shared_ptr<T> var) : var(var)
+    {
+        if (this->var) this->var->mutex.lock();
+    }
+
+    locked_var(const locked_var&) = delete;
+
+    ~locked_var()
+    {
+        if (this->var) this->var->mutex.unlock();
+    }
+
+    T* operator->() const
+    {
+        return this->var.get();
+    }
+
+    T& operator*() const
+    {
+        return *this->var;
+    }
+
+
+};
+
 struct translation_unit_data
 {
     translation_unit_data(const char * filename, const char ** args, int argv) : tu(filename, args, argv)
     {}
 
     async_translation_unit tu;
-
+    std::timed_mutex mutex;
     std::set<std::string> last_completions;
     const char * completions[CLANG_COMPLETE_MAX_RESULTS+2];
 
@@ -480,12 +520,14 @@ struct translation_unit_data
     std::string last_type;
 };
 
-std::timed_mutex global_mutex;
+// std::timed_mutex global_mutex;
 
+std::timed_mutex tus_mutex;
 std::unordered_map<std::string, std::shared_ptr<translation_unit_data>> tus;
 
-std::shared_ptr<translation_unit_data> get_tud(const char * filename, const char ** args, int argv)
+locked_var<translation_unit_data> get_tud(const char * filename, const char ** args, int argv)
 {
+    std::lock_guard<std::timed_mutex> lock(tus_mutex);
     if (tus.find(filename) == tus.end())
     {
         tus[filename] = std::make_shared<translation_unit_data>(filename, args, argv);
@@ -518,11 +560,8 @@ const char ** clang_complete_get_completions(
         const char * buffer, 
         unsigned len)
 {
-    static const char * empty_result[1] = { "" };
-    std::unique_lock<std::timed_mutex> lock(global_mutex, std::defer_lock);
-    if (!lock.try_lock_for(std::chrono::milliseconds(10))) return empty_result;
-
     auto tud = get_tud(filename, args, argv);
+
     tud->last_completions = tud->tu.async_complete_at(line, col, prefix, timeout, buffer, len);
     
     export_array(tud->last_completions, tud->completions);
@@ -532,14 +571,10 @@ const char ** clang_complete_get_completions(
 
 const char ** clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
 {
-    static const char * empty_result[1] = { "" };
-    std::unique_lock<std::timed_mutex> lock(global_mutex, std::defer_lock);
-    if (!lock.try_lock_for(std::chrono::milliseconds(250))) return empty_result;
-
     auto tud = get_tud(filename, args, argv);
     tud->tu.reparse(nullptr, 0);
 
-    tud->last_diagnostics = tud->tu.get_diagnostics();
+    tud->last_diagnostics = tud->tu.get_diagnostics(250);
     
     export_array(tud->last_diagnostics, tud->diagnostics);
 
@@ -548,7 +583,7 @@ const char ** clang_complete_get_diagnostics(const char * filename, const char *
 
 const char * clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
-    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    // std::lock_guard<std::timed_mutex> lock(global_mutex);
     auto tud = get_tud(filename, args, argv);
 
     tud->last_definition = tud->tu.get_definition(line, col);
@@ -558,7 +593,7 @@ const char * clang_complete_get_definition(const char * filename, const char ** 
 
 const char * clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
-    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    // std::lock_guard<std::timed_mutex> lock(global_mutex);
     auto tud = get_tud(filename, args, argv);
 
     tud->last_type = tud->tu.get_type(line, col);
@@ -568,7 +603,7 @@ const char * clang_complete_get_type(const char * filename, const char ** args, 
 
 void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len)
 {
-    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    // std::lock_guard<std::timed_mutex> lock(global_mutex);
     auto tud = get_tud(filename, args, argv);
 
     tud->tu.reparse(buffer, len);
@@ -576,7 +611,7 @@ void clang_complete_reparse(const char * filename, const char ** args, int argv,
 
 void clang_complete_free_tu(const char * filename)
 {
-    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    std::lock_guard<std::timed_mutex> lock(tus_mutex);
     if (tus.find(filename) != tus.end())
     {
         tus.erase(filename);
@@ -585,7 +620,7 @@ void clang_complete_free_tu(const char * filename)
 
 void clang_complete_free_all()
 {
-    std::lock_guard<std::timed_mutex> lock(global_mutex);
+    std::lock_guard<std::timed_mutex> lock(tus_mutex);
     tus.clear();
 }
 }
