@@ -1,7 +1,7 @@
 #ifndef CLANG_UTILS_TRANSLATION_UNIT_H
 #define CLANG_UTILS_TRANSLATION_UNIT_H
 
-
+#include <python3.3/Python.h>
 #include <clang-c/Index.h>
 #include <iostream>
 #include <fstream>
@@ -473,83 +473,37 @@ public:
 #define CLANG_COMPLETE_MAX_RESULTS 8192
 #endif
 
-template<class T>
-struct locked_var
-{
-    std::shared_ptr<T> var;
-
-    locked_var(std::shared_ptr<T> var) : var(var)
-    {
-        if (this->var) this->var->mutex.lock();
-    }
-
-    locked_var(const locked_var&) = delete;
-
-    ~locked_var()
-    {
-        if (this->var) this->var->mutex.unlock();
-    }
-
-    T* operator->() const
-    {
-        return this->var.get();
-    }
-
-    T& operator*() const
-    {
-        return *this->var;
-    }
-
-
-};
-
-struct translation_unit_data
-{
-    translation_unit_data(const char * filename, const char ** args, int argv) : tu(filename, args, argv)
-    {}
-
-    async_translation_unit tu;
-    std::timed_mutex mutex;
-    std::set<std::string> last_completions;
-    const char * completions[CLANG_COMPLETE_MAX_RESULTS+2];
-
-    std::vector<std::string> last_diagnostics;
-    const char * diagnostics[CLANG_COMPLETE_MAX_RESULTS+2];
-
-    std::string last_definition;
-    std::string last_type;
-};
-
-// std::timed_mutex global_mutex;
 
 std::timed_mutex tus_mutex;
-std::unordered_map<std::string, std::shared_ptr<translation_unit_data>> tus;
+std::unordered_map<std::string, std::shared_ptr<async_translation_unit>> tus;
 
-locked_var<translation_unit_data> get_tud(const char * filename, const char ** args, int argv)
+std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char ** args, int argv)
 {
     std::lock_guard<std::timed_mutex> lock(tus_mutex);
     if (tus.find(filename) == tus.end())
     {
-        tus[filename] = std::make_shared<translation_unit_data>(filename, args, argv);
+        tus[filename] = std::make_shared<async_translation_unit>(filename, args, argv);
     }
     return tus[filename];
 }
 
-template<class Range, class Array>
-void export_array(const Range& r, Array& out)
+template<class Range>
+PyObject* export_pylist(const Range& r)
 {
-    auto overflow = r.size() > CLANG_COMPLETE_MAX_RESULTS;
-    
-    auto first = r.begin();
-    auto last = overflow ? std::next(first, CLANG_COMPLETE_MAX_RESULTS) : r.end();
-    std::transform(first, last, out, [](const std::string& x) { return x.c_str(); });
+    PyObject* result = PyList_New(0);
+    int i;
 
-    out[std::distance(first, last)] = ""; 
+    for (const auto& s:r)
+    {
+        PyList_Append(result, PyUnicode_FromString(s.c_str()));
+    }
+
+    return result;
 }
 
 
 extern "C" {
-const char ** clang_complete_get_completions(
+PyObject* clang_complete_get_completions(
         const char * filename, 
         const char ** args, 
         int argv, 
@@ -560,53 +514,37 @@ const char ** clang_complete_get_completions(
         const char * buffer, 
         unsigned len)
 {
-    auto tud = get_tud(filename, args, argv);
+    auto tu = get_tu(filename, args, argv);
 
-    tud->last_completions = tud->tu.async_complete_at(line, col, prefix, timeout, buffer, len);
-    
-    export_array(tud->last_completions, tud->completions);
-
-    return tud->completions;
+    return export_pylist(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
 }
 
-const char ** clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
+PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
 {
-    auto tud = get_tud(filename, args, argv);
-    tud->tu.reparse(nullptr, 0);
+    auto tu = get_tu(filename, args, argv);
+    tu->reparse(nullptr, 0);
 
-    tud->last_diagnostics = tud->tu.get_diagnostics(250);
-    
-    export_array(tud->last_diagnostics, tud->diagnostics);
-
-    return tud->diagnostics;
+    return export_pylist(tu->get_diagnostics(250));
 }
 
-const char * clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
+PyObject* clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
-    // std::lock_guard<std::timed_mutex> lock(global_mutex);
-    auto tud = get_tud(filename, args, argv);
+    auto tu = get_tu(filename, args, argv);
 
-    tud->last_definition = tud->tu.get_definition(line, col);
-
-    return tud->last_definition.c_str();
+    return PyUnicode_FromString(tu->get_definition(line, col).c_str());
 }
 
-const char * clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
+PyObject* clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
-    // std::lock_guard<std::timed_mutex> lock(global_mutex);
-    auto tud = get_tud(filename, args, argv);
+    auto tu = get_tu(filename, args, argv);
 
-    tud->last_type = tud->tu.get_type(line, col);
-
-    return tud->last_type.c_str();
+    return PyUnicode_FromString(tu->get_type(line, col).c_str());
 }
 
 void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len)
 {
-    // std::lock_guard<std::timed_mutex> lock(global_mutex);
-    auto tud = get_tud(filename, args, argv);
-
-    tud->tu.reparse(buffer, len);
+    auto tu = get_tu(filename, args, argv);
+    tu->reparse();
 }
 
 void clang_complete_free_tu(const char * filename)
