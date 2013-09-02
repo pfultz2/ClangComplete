@@ -16,7 +16,7 @@
 
 #include "complete.h"
 
-#define CLANG_COMPLETE_LOG
+// #define CLANG_COMPLETE_LOG
 
 #ifdef CLANG_COMPLETE_LOG
 std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
