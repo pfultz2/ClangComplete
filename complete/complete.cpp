@@ -16,7 +16,7 @@
 
 #include "complete.h"
 
-// #define CLANG_COMPLETE_LOG
+#define CLANG_COMPLETE_LOG
 
 #ifdef CLANG_COMPLETE_LOG
 std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
@@ -167,6 +167,21 @@ class translation_unit
         }
     }
 
+    static std::string get_typed_text(CXCompletionResult& c)
+    {
+        if ( clang_getCompletionAvailability( c.CompletionString ) == CXAvailability_Available )
+        {
+            int num = clang_getNumCompletionChunks(c.CompletionString);
+            for(int i=0;i<num;i++)
+            {
+                auto str = clang_getCompletionChunkText(c.CompletionString, i);
+                auto kind = clang_getCompletionChunkKind(c.CompletionString, i);
+                if (kind == CXCompletionChunk_TypedText) return to_std_string(str);
+            }
+        }
+        return {};
+    }
+
     completion_results completions_at(unsigned line, unsigned col, const char * buffer, unsigned len)
     {
         if (buffer == nullptr) 
@@ -286,15 +301,8 @@ public:
         std::set<std::string> results;
         for(auto& c:this->completions_at(line, col, buffer, len))
         {
-            std::string r;
-            for_each_completion_string(c, [&](const std::string& s, CXCompletionChunkKind kind)
-            {
-                if (kind == CXCompletionChunk_TypedText)
-                {
-                    r = s;
-                }
-            });
-            if (!r.empty() and starts_with(r.c_str(), prefix)) results.insert(r);
+            std::string text = get_typed_text(c);
+            if (!text.empty() and starts_with(text.c_str(), prefix)) results.insert(text);
         }
         // Perhaps a reparse can help rejuvenate clang?
         if (results.size() == 0) this->unsafe_reparse(buffer, len);
@@ -375,6 +383,7 @@ public:
     
     ~translation_unit()
     {
+        std::lock_guard<std::timed_mutex> lock(this->m);
         clang_disposeTranslationUnit(this->tu);
         clang_disposeIndex(this->index);
     }
