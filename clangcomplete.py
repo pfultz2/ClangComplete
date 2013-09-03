@@ -185,12 +185,9 @@ def get_settings():
     return sublime.load_settings("ClangComplete.sublime-settings")
 
 def get_setting(view, key, default=None):
-    try:
-        s = view.settings()
-        if s.has("clangcomplete_%s" % key):
-            return s.get("clangcomplete_%s" % key)
-    except:
-        pass
+    s = view.settings()
+    if s.has("clangcomplete_%s" % key):
+        return s.get("clangcomplete_%s" % key)
     return get_settings().get(key, default)
 
 def get_args(view):
