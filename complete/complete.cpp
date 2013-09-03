@@ -143,12 +143,14 @@ class translation_unit
 
         iterator begin()
         {
-            return results->Results;
+            if (results == nullptr) return nullptr;
+            else return results->Results;
         }
 
         iterator end()
         {
-            return results->Results + results->NumResults;
+            if (results == nullptr) return nullptr;
+            else return results->Results + results->NumResults;
         }
     };
 
