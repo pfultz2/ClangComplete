@@ -106,9 +106,15 @@ std::string get_line_at(const std::string& str, unsigned int line)
     else return "";
 }
 
+CXIndex get_index()
+{
+    static std::shared_ptr<void> index = std::shared_ptr<void>(clang_createIndex(1, 1), &clang_disposeIndex);
+    return index.get();
+}
+
 class translation_unit
 {
-    CXIndex index;
+    // CXIndex index;
     CXTranslationUnit tu;
     const char * filename;
     std::timed_mutex m;
@@ -275,8 +281,8 @@ public:
     };
     translation_unit(const char * filename, const char ** args, int argv) : filename(filename)
     {
-        this->index = clang_createIndex(1, 1);
-        this->tu = clang_parseTranslationUnit(index, filename, args, argv, NULL, 0, clang_defaultEditingTranslationUnitOptions());
+        // this->index = clang_createIndex(1, 1);
+        this->tu = clang_parseTranslationUnit(get_index(), filename, args, argv, NULL, 0, clang_defaultEditingTranslationUnitOptions());
         detach_async([=]() { this->reparse(); });
     }
 
@@ -319,11 +325,11 @@ public:
         std::unique_lock<std::timed_mutex> lock(this->m, std::defer_lock);
         if (timeout < 0)
         {
-            if (!lock.try_lock_for(std::chrono::milliseconds(timeout))) return {};
+            lock.lock();
         }
         else
         {
-            lock.lock();
+            if (!lock.try_lock_for(std::chrono::milliseconds(timeout))) return {};
         }
         std::vector<std::string> result;
         auto n = clang_getNumDiagnostics(this->tu);
@@ -387,7 +393,7 @@ public:
     {
         std::lock_guard<std::timed_mutex> lock(this->m);
         clang_disposeTranslationUnit(this->tu);
-        clang_disposeIndex(this->index);
+        // clang_disposeIndex(this->index);
     }
 };
 
