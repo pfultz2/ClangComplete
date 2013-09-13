@@ -1,7 +1,7 @@
 import sublime, sublime_plugin
 
 from threading import Timer
-from .complete.complete import get_completions, get_diagnostics, get_definition, get_type, reparse, free_tu, free_all
+from .complete.complete import get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
 import os, re, sys
 
 
@@ -209,6 +209,26 @@ class ClangCompleteClearCache(sublime_plugin.TextCommand):
         sublime.status_message("Clearing cache...")
         project_options = {}
         free_all()
+
+class ClangCompleteShowUsage(sublime_plugin.TextCommand):
+    def run(self, edit):
+        print("Show Usages")
+        filename = self.view.file_name()
+        # The view hasnt finsished loading yet
+        if (filename is None): return
+
+        usage = get_usage(filename, get_args(self.view))
+        data = '\n'.join([key + ": " + str(value) for key, value in usage.items()])
+
+        panel = self.view.window().get_output_panel("clangusage")
+
+        panel.set_read_only(False)
+        panel.set_scratch(True)
+        panel.erase(edit, sublime.Region(0, panel.size()))
+        panel.insert(edit, 0, data)
+        panel.set_read_only(True)
+
+        self.view.window().run_command("show_panel", {"panel": "output.clangusage"})
 
 class ClangCompleteGotoDef(sublime_plugin.TextCommand):
     def run(self, edit):

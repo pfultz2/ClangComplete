@@ -13,6 +13,7 @@ complete = cdll.LoadLibrary('%s/libcomplete.so' % current_path)
 
 complete.clang_complete_get_completions.restype = py_object
 complete.clang_complete_get_diagnostics.restype = py_object
+complete.clang_complete_get_usage.restype = py_object
 complete.clang_complete_get_definition.restype = py_object
 complete.clang_complete_get_type.restype = py_object
 
@@ -31,6 +32,9 @@ def get_completions(filename, args, line, col, prefix, timeout, unsaved_buffer):
 
 def get_diagnostics(filename, args):
     return complete.clang_complete_get_diagnostics(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
+
+def get_usage(filename, args):
+    return complete.clang_complete_get_usage(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
 
 def get_definition(filename, args, line, col):
     return complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)

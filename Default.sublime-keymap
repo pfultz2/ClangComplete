@@ -10,5 +10,9 @@
     {
         "command": "clang_complete_show_type",
         "keys": ["alt+d", "alt+t"]
+    },
+    {
+        "command": "clang_complete_show_usage",
+        "keys": ["alt+d", "alt+u"]
     }
 ]

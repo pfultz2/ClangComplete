@@ -36,6 +36,21 @@ std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
 
 #endif
 
+
+namespace std {
+
+string& to_string(string& s)
+{
+    return s;
+}
+
+const string& to_string(const string& s)
+{
+    return s;
+}
+
+}
+
 class timer 
 {
     typedef typename std::conditional<std::chrono::high_resolution_clock::is_steady,
@@ -302,6 +317,47 @@ public:
         this->unsafe_reparse(buffer, len);
     }
 
+    struct usage
+    {
+        CXTUResourceUsage u;
+
+        typedef CXTUResourceUsageEntry* iterator;
+
+        usage(CXTUResourceUsage u) : u(u)
+        {}
+
+        usage(const usage&) = delete;
+
+
+        iterator begin()
+        {
+            return u.entries;
+        }
+
+        iterator end()
+        {
+            return u.entries + u.numEntries;
+        }
+
+        ~usage()
+        {
+            clang_disposeCXTUResourceUsage(u);
+        }
+    };
+
+    std::unordered_map<std::string, unsigned long> get_usage()
+    {
+        std::lock_guard<std::timed_mutex> lock(this->m);
+        std::unordered_map<std::string, unsigned long> result;
+        auto u = std::make_shared<usage>(clang_getCXTUResourceUsage(this->tu));
+        for(CXTUResourceUsageEntry e:*u)
+        {
+            result.insert(std::make_pair(clang_getTUResourceUsageName(e.kind), e.amount));
+        }
+        return result;
+
+    }
+
     std::set<std::string> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
     {
         std::lock_guard<std::timed_mutex> lock(this->m);
@@ -508,11 +564,23 @@ template<class Range>
 PyObject* export_pylist(const Range& r)
 {
     PyObject* result = PyList_New(0);
-    int i;
 
     for (const auto& s:r)
     {
         PyList_Append(result, PyUnicode_FromString(s.c_str()));
+    }
+
+    return result;
+}
+
+template<class Range>
+PyObject* export_pydict_string_ulong(const Range& r)
+{
+    PyObject* result = PyDict_New();
+
+    for (const auto& p:r)
+    {
+        PyDict_SetItem(result, PyUnicode_FromString(p.first.c_str()), PyLong_FromUnsignedLong(p.second));
     }
 
     return result;
@@ -542,6 +610,13 @@ PyObject* clang_complete_get_diagnostics(const char * filename, const char ** ar
     tu->reparse(nullptr, 0);
 
     return export_pylist(tu->get_diagnostics(250));
+}
+
+PyObject* clang_complete_get_usage(const char * filename, const char ** args, int argv)
+{
+    auto tu = get_tu(filename, args, argv);
+
+    return export_pydict_string_ulong(tu->get_usage());
 }
 
 PyObject* clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)

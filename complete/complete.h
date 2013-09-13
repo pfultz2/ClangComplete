@@ -18,6 +18,8 @@ extern "C"
 
     PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv);
 
+    PyObject* clang_complete_get_usage(const char * filename, const char ** args, int argv);
+
     PyObject* clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col);
 
     PyObject* clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col);
