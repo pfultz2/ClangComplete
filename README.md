@@ -20,7 +20,7 @@ ClangComplete provides code completion for c, c++, and objective c files. To fig
 ClangComplete also shows diagnostics whenever a file is saved, and provides `Goto Definition` functionality. Here are the default shortcuts for ClangComplete:
 
 |      Key     |      Action      |
------------------------------------
+|--------------|------------------|
 | alt+d, alt+d | Go to definition |
 | alt+d, alt+c | Clear cache      |
 | alt+d, alt+t | Show type        |
