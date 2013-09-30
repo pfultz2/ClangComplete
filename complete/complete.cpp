@@ -132,13 +132,13 @@ class translation_unit
 {
     // CXIndex index;
     CXTranslationUnit tu;
-    const char * filename;
+    std::string filename;
     std::timed_mutex m;
 
     CXUnsavedFile unsaved_buffer(const char * buffer, unsigned len)
     {
         CXUnsavedFile result;
-        result.Filename = this->filename;
+        result.Filename = this->filename.c_str();
         result.Contents = buffer;
         result.Length = len;
         return result;
@@ -210,12 +210,12 @@ class translation_unit
     {
         if (buffer == nullptr) 
         {
-            return clang_codeCompleteAt(this->tu, this->filename, line, col, nullptr, 0, CXCodeComplete_IncludeMacros);
+            return clang_codeCompleteAt(this->tu, this->filename.c_str(), line, col, nullptr, 0, CXCodeComplete_IncludeMacros);
         }
         else
         {
             auto unsaved = this->unsaved_buffer(buffer, len);
-            return clang_codeCompleteAt(this->tu, this->filename, line, col, &unsaved, 1, CXCodeComplete_IncludeMacros);
+            return clang_codeCompleteAt(this->tu, this->filename.c_str(), line, col, &unsaved, 1, CXCodeComplete_IncludeMacros);
         }
     }
 
@@ -306,7 +306,7 @@ public:
 
     cursor get_cursor_at(unsigned long line, unsigned long col, const char * name=nullptr)
     {
-        if (name == nullptr) name = this->filename;
+        if (name == nullptr) name = this->filename.c_str();
         CXFile f = clang_getFile(this->tu, name);
         CXSourceLocation loc = clang_getLocation(this->tu, f, line, col);
         return cursor(clang_getCursor(this->tu, loc));
