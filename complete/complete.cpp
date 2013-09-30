@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <cstring>
+#include <cassert>
 
 #include "complete.h"
 
@@ -457,7 +458,7 @@ public:
 #define CLANG_COMPLETE_ASYNC_WAIT_MS 200
 #endif
 
-class async_translation_unit : public translation_unit
+class async_translation_unit : public translation_unit, public std::enable_shared_from_this<async_translation_unit>
 {
 
     struct query
@@ -511,6 +512,7 @@ public:
 
     std::set<std::string> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
     {
+        
         std::unique_lock<std::timed_mutex> lock(this->async_mutex, std::defer_lock);
         if (!lock.try_lock_for(std::chrono::milliseconds(20))) return {};
 
@@ -519,6 +521,7 @@ public:
             // If we are busy with a query, lets avoid making lots of new queries
             if (not this->q.ready()) return {};
             
+            auto self = this->shared_from_this();
             std::string buffer_as_string(buffer, buffer+len);
             this->q.set(detach_async([=]
             {
@@ -526,7 +529,7 @@ public:
                 if (buffer == nullptr) b = nullptr;
                 // TODO: Should we always reparse?
                 // else this->reparse(b, len);
-                return this->complete_at(line, col, "", b, buffer_as_string.length()); 
+                return self->complete_at(line, col, "", b, buffer_as_string.length()); 
             }), line, col);
         }
         auto completions = q.get(timeout);
@@ -641,11 +644,15 @@ void clang_complete_reparse(const char * filename, const char ** args, int argv,
 
 void clang_complete_free_tu(const char * filename)
 {
-    std::lock_guard<std::timed_mutex> lock(tus_mutex);
-    if (tus.find(filename) != tus.end())
+    std::string name = filename;
+    detach_async([=]
     {
-        tus.erase(filename);
-    }
+        std::lock_guard<std::timed_mutex> lock(tus_mutex);
+        if (tus.find(name) != tus.end())
+        {
+            tus.erase(name);
+        }
+    });
 }
 
 void clang_complete_free_all()

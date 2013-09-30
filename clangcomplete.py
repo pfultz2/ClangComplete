@@ -263,6 +263,8 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):
         print("complete_at", prefix)
         filename = view.file_name()
+        # The view hasnt finsished loading yet
+        if (filename is None): return []
         if not is_supported_language(view):
             return []
 
@@ -274,7 +276,9 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         return completions;
 
     def diagnostics(self, view):
-        filename = view.file_name()        
+        filename = view.file_name()  
+        # The view hasnt finsished loading yet
+        if (filename is None): return []      
         return get_diagnostics(filename, get_args(view))
 
     def show_diagnostics(self, view):

@@ -23,6 +23,7 @@ def convert_to_c_string_array(a):
     return result
 
 def get_completions(filename, args, line, col, prefix, timeout, unsaved_buffer):
+    if unsaved_buffer is None and not os.path.exists(filename): return []
     buffer = None
     if (unsaved_buffer is not None): buffer = unsaved_buffer.encode("utf-8")
     buffer_len = 0
