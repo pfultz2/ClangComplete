@@ -15,7 +15,7 @@ This will build the complete binary. It requires development versions of clang a
 Usage
 -----
 
-ClangComplete provides code completion for c, c++, and objective c files. To figure out the compiler flags needed to parse the file, ClangComplete looks into the build directory in the projecto folder for cmake build settings. If the build directory is placed somewhere else the `build_dir` can be set to the actual buid dierectory. Also if cmake is not use, options can be manually set by setting the `default_options` setting.
+ClangComplete provides code completion for c, c++, and objective c files. To figure out the compiler flags needed to parse the file, ClangComplete looks into the build directory in the project folder for cmake build settings. If the build directory is placed somewhere else the `build_dir` can be set to the actual buid dierectory. Also if cmake is not use, options can be manually set by setting the `default_options` setting.
 
 ClangComplete also shows diagnostics whenever a file is saved, and provides `Goto Definition` functionality. Here are the default shortcuts for ClangComplete:
 
