@@ -1,7 +1,16 @@
 {
+    // Additional compiler options that are always added to the completion
+    // parser
     "additional_options": ["-Wno-c++11-narrowing", "-D__STRICT_ANSI__", "-DQT_NO_DEBUG", "-isystem", "/usr/local/lib/clang/3.3/include"],
+    // The cmake build directory where ClangCompletion will look for the
+    // compiler flags
     "build_dir": "build",
+    // If a valid build directory cannot be found then the default options
+    // will be used instead
     "default_options": ["-std=c++11"],
+    // How long ClangComplete will wait for completions. This help prevent
+    // clang from blocking the gui thread.
     "timeout": 200,
+    // Suppress sublime's completion suggestions
     "inhibit_sublime_completions": true
 }
