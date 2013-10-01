@@ -1,7 +1,10 @@
 ClangComplete
 =============
 
-Clang completion for sublime text 3.
+Description
+-----------
+
+Clang completion for sublime text 3. Additionally, it provides diagnostics and some simple navigation capabilites.
 
 Installation
 ------------
