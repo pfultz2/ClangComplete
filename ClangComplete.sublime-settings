@@ -8,6 +8,21 @@
     // If a valid build directory cannot be found then the default options
     // will be used instead
     "default_options": ["-std=c++11"],
+    // Additional paths that are searched when doing completion for include
+    // directives. Generally, it should always be the default include paths
+    // set by the compiler. To see the default search paths for the compiler
+    // type `echo | gcc -v -x c++ -E` into the command line.
+    "default_include_paths":
+    [
+        "/usr/include/c++/4.7",
+        "/usr/include/x86_64-linux-gnu/c++/4.7/.",
+        "/usr/include/c++/4.7/backward",
+        "/usr/lib/gcc/x86_64-linux-gnu/4.7/include",
+        "/usr/local/include",
+        "/usr/lib/gcc/x86_64-linux-gnu/4.7/include-fixed",
+        "/usr/include/x86_64-linux-gnu",
+        "/usr/include"
+    ],
     // How long ClangComplete will wait for completions. This help prevent
     // clang from blocking the gui thread.
     "timeout": 200,

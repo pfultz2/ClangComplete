@@ -122,8 +122,8 @@ def find_includes(view, project_path):
         if is_path: result.update(search_include(option))
         if option == '-isystem': is_path = True
         else: is_path = False 
-    result.update(search_include("/usr/include"))
-    result.update(search_include("/usr/local/include"))
+    for path in get_setting(view, "default_include_paths", ["/usr/include", "/usr/local/include"]):
+        result.update(search_include(path))
     return sorted(result)
 
 def get_includes(view):
