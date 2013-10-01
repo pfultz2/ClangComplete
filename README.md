@@ -28,4 +28,7 @@ ClangComplete also shows diagnostics whenever a file is saved, and provides `Got
 | alt+d, alt+c | Clear cache      |
 | alt+d, alt+t | Show type        |
 
+Support
+-------
 
+[Donate](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=HMB5AGA7DQ9NS&lc=US&item_name=Clang%20Complete&currency_code=USD&bn=PP%2dDonationsBF%3abtn_donate_LG%2egif%3aNonHosted)
