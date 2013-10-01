@@ -24,8 +24,6 @@
 
 #include "complete.h"
 
-// #define CLANG_COMPLETE_LOG
-
 #ifdef CLANG_COMPLETE_LOG
 std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
 #define DUMP(x) dump_log << std::string(__PRETTY_FUNCTION__) << ": " << #x << " = " << x << std::endl
@@ -380,7 +378,6 @@ public:
         if (results.size() == 0) this->unsafe_reparse(buffer, len);
         DUMP(results.size());
         DUMP_TIMER();
-        // if (buffer != nullptr) dump_log << get_line_at(std::string(buffer, len), line) << std::endl;
         return results;
     }
 
@@ -405,11 +402,6 @@ public:
                 auto str = clang_formatDiagnostic(diag.get(), clang_defaultDiagnosticDisplayOptions());
                 result.push_back(to_std_string(str));
             }
-            // else if (diag != nullptr) 
-            // {
-            //     auto str = clang_formatDiagnostic(diag.get(), clang_defaultDiagnosticDisplayOptions());
-            //     DUMP(to_std_string(str));
-            // }
         }
         return result;
     }
@@ -439,17 +431,6 @@ public:
         std::lock_guard<std::timed_mutex> lock(this->m);
 
         return this->get_cursor_at(line, col).get_type_name();
-        // cursor c = this->get_cursor_at(line, col);
-        // DUMP(c.get_display_name());
-        // DUMP(c.get_spelling());
-        // cursor ref = c.get_type().get_definition();
-        // if (ref.is_null()) return "null";
-        // else
-        // {
-        //     DUMP(ref.get_spelling());
-        //     DUMP(ref.get_location_path());
-        //     return ref.get_spelling();
-        // }
 
     }
     
@@ -457,13 +438,8 @@ public:
     {
         std::lock_guard<std::timed_mutex> lock(this->m);
         clang_disposeTranslationUnit(this->tu);
-        // clang_disposeIndex(this->index);
     }
 };
-
-#ifndef CLANG_COMPLETE_ASYNC_WAIT_MS
-#define CLANG_COMPLETE_ASYNC_WAIT_MS 200
-#endif
 
 class async_translation_unit : public translation_unit, public std::enable_shared_from_this<async_translation_unit>
 {
@@ -549,13 +525,6 @@ public:
         return results;
     }
 };
-
-
-
-#ifndef CLANG_COMPLETE_MAX_RESULTS
-#define CLANG_COMPLETE_MAX_RESULTS 8192
-#endif
-
 
 std::timed_mutex tus_mutex;
 std::unordered_map<std::string, std::shared_ptr<async_translation_unit>> tus;
