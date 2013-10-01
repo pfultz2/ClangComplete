@@ -8,8 +8,26 @@ import sublime, sublime_plugin
 
 from threading import Timer
 from .complete.complete import get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
-import os, re, sys
+import os, re, sys, bisect
 
+def get_settings():
+    return sublime.load_settings("ClangComplete.sublime-settings")
+
+def get_setting(view, key, default=None):
+    s = view.settings()
+    if s.has("clangcomplete_%s" % key):
+        return s.get("clangcomplete_%s" % key)
+    return get_settings().get(key, default)
+
+def get_project_path(view):
+    return view.window().folders()[0]
+
+
+def get_unsaved_buffer(view):
+    buffer = None
+    if view.is_dirty():
+        buffer = view.substr(sublime.Region(0, view.size()))
+    return buffer
 
 #
 #
@@ -52,11 +70,37 @@ def get_options(project_path, additional_options, build_dir, default_options):
     # print(project_path, project_options[project_path])
     return project_options[project_path]
 
+def get_args(view):
+    project_path = get_project_path(view)
+    additional_options = get_setting(view, "additional_options", [])
+    build_dir = get_setting(view, "build_dir", "build")
+    default_options = get_setting(view, "default_options", ["-std=c++11"])
+    return get_options(project_path, additional_options, build_dir, default_options)
+
 #
 #
 # Retrieve include files
 #
 #
+def find_any_of(s, items):
+    for item in items:
+        i = s.find(item)
+        if (i != -1): return i
+    return -1
+
+def bisect_right_prefix(a, x, lo=0, hi=None):
+    if lo < 0:
+        raise ValueError('lo must be non-negative')
+    if hi is None:
+        hi = len(a)
+    while lo < hi:
+        mid = (lo+hi)//2
+        if x < a[mid] and not a[mid].startswith(x): hi = mid
+        else: lo = mid+1
+    return lo
+
+def find_prefix(items, prefix):
+    return items[bisect.bisect_left(items, prefix): bisect_right_prefix(items, prefix)]
 
 project_includes = {}
 
@@ -70,18 +114,35 @@ def search_include(path):
             result.append(full_name[start:])
     return result
 
-def find_includes(project_path):
+def find_includes(view, project_path):
     result = set()
     is_path = False
-    for option in get_options(project_path):
-        if option == '-isystem': is_path = True
-        else: is_path = False 
+    for option in get_args(view):
         if option.startswith('-I'): result.update(search_include(option[2:]))
         if is_path: result.update(search_include(option))
-    project_includes[project_path] = sorted(result)
+        if option == '-isystem': is_path = True
+        else: is_path = False 
+    result.update(search_include("/usr/include"))
+    result.update(search_include("/usr/local/include"))
+    return sorted(result)
 
-def complete_includes(project_path, prefix):
-    pass
+def get_includes(view):
+    global project_includes
+    project_path = get_project_path(view)
+    if project_path not in project_includes:
+        project_includes[project_path] = find_includes(view, project_path)
+    return project_includes[project_path]
+
+def parse_slash(path, index):
+    last = path.find('/', index)
+    if last == -1: return path[index:]
+    return path[index:last + 1]
+
+def complete_includes(view, prefix):
+    slash_index = prefix.rfind('/') + 1
+    paths = find_prefix(get_includes(view), prefix)
+    return set([parse_slash(path, slash_index) for path in paths])
+
 
 
 #
@@ -187,28 +248,6 @@ member_regex = re.compile(r"(([a-zA-Z_]+[0-9_]*)|([\)\]])+)((\.)|(->))$")
 #         return re.search(r"\[[\.\->\s\w\]]+\s+$", line) != None
 #     return False
 
-def get_settings():
-    return sublime.load_settings("ClangComplete.sublime-settings")
-
-def get_setting(view, key, default=None):
-    s = view.settings()
-    if s.has("clangcomplete_%s" % key):
-        return s.get("clangcomplete_%s" % key)
-    return get_settings().get(key, default)
-
-def get_args(view):
-    project_path = view.window().folders()[0]
-    additional_options = get_setting(view, "additional_options", [])
-    build_dir = get_setting(view, "build_dir", "build")
-    default_options = get_setting(view, "default_options", ["-std=c++11"])
-    return get_options(project_path, additional_options, build_dir, default_options)
-
-def get_unsaved_buffer(view):
-    buffer = None
-    if view.is_dirty():
-        buffer = view.substr(sublime.Region(0, view.size()))
-    return buffer
-
 class ClangCompleteClearCache(sublime_plugin.TextCommand):
     def run(self, edit):
         global project_options
@@ -274,10 +313,17 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         if not is_supported_language(view):
             return []
 
+        completions = []
+
+        line = view.substr(view.line(location))
         row, col = view.rowcol(location - len(prefix))
 
-        # completions = get_completions(filename, get_args(view), row+1, col+1, "", timeout, unsaved_buffer)
-        completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, get_unsaved_buffer(view))
+        if line.startswith("#include") or line.startswith("# include"):
+            start = find_any_of(line, ['<', '"'])
+            if start != -1: completions = complete_includes(view, line[start+1:col] + prefix)
+        else:
+            # completions = get_completions(filename, get_args(view), row+1, col+1, "", timeout, unsaved_buffer)
+            completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, get_unsaved_buffer(view))
 
         return completions;
 
