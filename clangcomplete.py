@@ -58,6 +58,10 @@ def accumulate_options(path):
 
 project_options = {}
 
+def clear_options():
+    global project_options
+    project_options = {}
+
 def get_options(project_path, additional_options, build_dir, default_options):
     if project_path in project_options: return project_options[project_path]
 
@@ -103,6 +107,10 @@ def find_prefix(items, prefix):
     return items[bisect.bisect_left(items, prefix): bisect_right_prefix(items, prefix)]
 
 project_includes = {}
+
+def clear_includes():
+    global project_includes
+    project_includes = {}
 
 def search_include(path):
     start = len(path)
@@ -250,9 +258,9 @@ member_regex = re.compile(r"(([a-zA-Z_]+[0-9_]*)|([\)\]])+)((\.)|(->))$")
 
 class ClangCompleteClearCache(sublime_plugin.TextCommand):
     def run(self, edit):
-        global project_options
         sublime.status_message("Clearing cache...")
-        project_options = {}
+        clear_includes()
+        clear_options()
         free_all()
 
 class ClangCompleteShowUsage(sublime_plugin.TextCommand):

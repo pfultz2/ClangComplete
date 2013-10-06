@@ -127,9 +127,10 @@ std::string get_line_at(const std::string& str, unsigned int line)
     else return "";
 }
 
-CXIndex get_index()
+CXIndex get_index(bool clear=false)
 {
     static std::shared_ptr<void> index = std::shared_ptr<void>(clang_createIndex(1, 1), &clang_disposeIndex);
+    if (clear) index = std::shared_ptr<void>(clang_createIndex(1, 1), &clang_disposeIndex);
     return index.get();
 }
 
@@ -635,6 +636,7 @@ void clang_complete_free_all()
 {
     std::lock_guard<std::timed_mutex> lock(tus_mutex);
     tus.clear();
+    get_index(true);
 }
 }
 
