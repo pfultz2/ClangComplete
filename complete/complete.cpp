@@ -12,6 +12,7 @@
 #include <clang-c/Index.h>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <set>
 #include <memory>
 #include <future>
@@ -365,15 +366,68 @@ public:
 
     }
 
-    std::set<std::string> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
+
+    typedef std::tuple<std::size_t, std::string, std::string> completion;
+
+    std::set<completion> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
     {
         std::lock_guard<std::timed_mutex> lock(this->m);
         TIMER();
-        std::set<std::string> results;
+        std::set<completion> results;
         for(auto& c:this->completions_at(line, col, buffer, len))
         {
-            std::string text = get_typed_text(c);
-            if (!text.empty() and starts_with(text.c_str(), prefix)) results.insert(text);
+            auto priority = clang_getCompletionPriority(c.CompletionString);
+            auto ck = c.CursorKind;
+
+            std::stringstream display;
+            std::stringstream replacement;
+            std::stringstream description;
+
+            std::size_t idx = 1;
+            for_each_completion_string(c, [&](const std::string& text, CXCompletionChunkKind kind)
+            {
+                switch (kind) 
+                {
+                case CXCompletionChunk_LeftParen:
+                case CXCompletionChunk_RightParen:
+                case CXCompletionChunk_LeftBracket:
+                case CXCompletionChunk_RightBracket:
+                case CXCompletionChunk_LeftBrace:
+                case CXCompletionChunk_RightBrace:
+                case CXCompletionChunk_LeftAngle:
+                case CXCompletionChunk_RightAngle:
+                case CXCompletionChunk_CurrentParameter:
+                case CXCompletionChunk_Colon:
+                case CXCompletionChunk_Comma:
+                case CXCompletionChunk_HorizontalSpace:
+                case CXCompletionChunk_VerticalSpace:
+                    display << text;
+                    replacement << text;
+                    break;
+                case CXCompletionChunk_TypedText:
+                    display << text;
+                    replacement << text;
+                    if (ck == CXCursor_Constructor)
+                      replacement << " ${" << idx++ << ":v}";
+                    break;
+                case CXCompletionChunk_Placeholder:
+                    display << text;
+                    replacement << "${" << idx++ << ":" << text << "}";
+                    break;
+                case CXCompletionChunk_ResultType:
+                case CXCompletionChunk_Text:
+                case CXCompletionChunk_Informative:
+                case CXCompletionChunk_Equal:
+                    description << text << " ";
+                    break;
+                case CXCompletionChunk_Optional:
+                case CXCompletionChunk_SemiColon:
+                    break;
+                }
+            });
+            auto resp = std::make_tuple(priority, display.str() + "\t" + description.str(), replacement.str());
+            if (not std::get<1>(resp).empty() and not std::get<2>(resp).empty() and starts_with(std::get<2>(resp).c_str(), prefix)) 
+                results.insert(resp);
         }
         // Perhaps a reparse can help rejuvenate clang?
         if (results.size() == 0) this->unsafe_reparse(buffer, len);
@@ -447,8 +501,8 @@ class async_translation_unit : public translation_unit, public std::enable_share
 
     struct query
     {
-        std::future<std::set<std::string>> results_future;
-        std::set<std::string> results;
+        std::future<std::set<completion>> results_future;
+        std::set<completion> results;
         unsigned line;
         unsigned col;
 
@@ -460,7 +514,7 @@ class async_translation_unit : public translation_unit, public std::enable_share
             return std::make_pair(this->line, this->col);
         }
 
-        void set(std::future<std::set<std::string>> && results_future, unsigned line, unsigned col)
+        void set(std::future<std::set<completion>> && results_future, unsigned line, unsigned col)
         {
             this->results = {};
             this->results_future = std::move(results_future);
@@ -468,7 +522,7 @@ class async_translation_unit : public translation_unit, public std::enable_share
             this->col = col;
         }
 
-        std::set<std::string> get(int timeout)
+        std::set<completion> get(int timeout)
         {
             if (results_future.valid() and this->ready(timeout))
             {
@@ -494,12 +548,12 @@ public:
     {}
 
 
-    std::set<std::string> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
+    std::set<completion> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
     {
         
         std::unique_lock<std::timed_mutex> lock(this->async_mutex, std::defer_lock);
         if (!lock.try_lock_for(std::chrono::milliseconds(20))) return {};
-
+        
         if (std::make_pair(line, col) != q.get_loc())
         {
             // If we are busy with a query, lets avoid making lots of new queries
@@ -513,17 +567,24 @@ public:
                 if (buffer == nullptr) b = nullptr;
                 // TODO: Should we always reparse?
                 // else this->reparse(b, len);
-                return self->complete_at(line, col, "", b, buffer_as_string.length()); 
+                return self->complete_at(line, col, "", b, buffer_as_string.length());
             }), line, col);
         }
         auto completions = q.get(timeout);
-        std::set<std::string> results;
+        std::set<completion> results;
         std::string pre = prefix;
-        std::copy_if(completions.begin(), completions.end(), inserter(results, results.begin()), [&](const std::string& x)
-        { 
-            return istarts_with(x, pre); 
-        });
-        return results;
+        if (pre.empty())
+        {
+            std::copy_if(completions.begin(), completions.end(), inserter(results, results.begin()), [&](const completion& x)
+            { 
+                return istarts_with(std::get<2>(x), pre); 
+            });
+            return results;
+        }
+        else
+        {
+            return completions;
+        }
     }
 };
 
@@ -533,7 +594,7 @@ std::unordered_map<std::string, std::shared_ptr<async_translation_unit>> tus;
 std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char ** args, int argv, int timeout=-1)
 {
     std::unique_lock<std::timed_mutex> lock(tus_mutex, std::defer_lock);
-    if (timeout < 0) return lock.lock();
+    if (timeout < 0) lock.lock();
     else if (!lock.try_lock_for(std::chrono::milliseconds(timeout))) return {};
 
     if (tus.find(filename) == tus.end())
@@ -557,6 +618,20 @@ PyObject* export_pylist(const Range& r)
 }
 
 template<class Range>
+PyObject* export_pylist_tuple(const Range& r)
+{
+    PyObject* result = PyList_New(0);
+
+    for (const auto& s:r)
+    {
+        PyList_Append(result, PyTuple_Pack(2, PyUnicode_FromString(std::get<1>(s).c_str()),
+                                       PyUnicode_FromString(std::get<2>(s).c_str())));
+    }
+
+    return result;
+}
+
+template<class Range>
 PyObject* export_pydict_string_ulong(const Range& r)
 {
     PyObject* result = PyDict_New();
@@ -567,6 +642,11 @@ PyObject* export_pydict_string_ulong(const Range& r)
     }
 
     return result;
+}
+
+PyObject* empty_pylist()
+{
+    return PyList_New(0);
 }
 
 
@@ -583,8 +663,8 @@ PyObject* clang_complete_get_completions(
         unsigned len)
 {
     auto tu = get_tu(filename, args, argv, 200);
-    if (tu == nullptr) return export_pylist(std::vector<std::string>());
-    else return export_pylist(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
+    if (tu == nullptr) return empty_pylist();
+    else return export_pylist_tuple(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
 }
 
 PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
