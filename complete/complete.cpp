@@ -530,9 +530,12 @@ public:
 std::timed_mutex tus_mutex;
 std::unordered_map<std::string, std::shared_ptr<async_translation_unit>> tus;
 
-std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char ** args, int argv)
+std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char ** args, int argv, int timeout=-1)
 {
-    std::lock_guard<std::timed_mutex> lock(tus_mutex);
+    std::unique_lock<std::timed_mutex> lock(tus_mutex, std::defer_lock);
+    if (timeout < 0) return lock.lock();
+    else if (!lock.try_lock_for(std::chrono::milliseconds(timeout))) return {};
+
     if (tus.find(filename) == tus.end())
     {
         tus[filename] = std::make_shared<async_translation_unit>(filename, args, argv);
@@ -579,9 +582,9 @@ PyObject* clang_complete_get_completions(
         const char * buffer, 
         unsigned len)
 {
-    auto tu = get_tu(filename, args, argv);
-
-    return export_pylist(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
+    auto tu = get_tu(filename, args, argv, 200);
+    if (tu == nullptr) return export_pylist(std::vector<std::string>());
+    else return export_pylist(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
 }
 
 PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
