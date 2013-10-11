@@ -245,8 +245,17 @@ def is_supported_language(view):
 
 
 
-
 member_regex = re.compile(r"(([a-zA-Z_]+[0-9_]*)|([\)\]])+)((\.)|(->))$")
+
+def convert_completion(x):
+    if '\n' in x:
+        c = x.split('\n', 1)
+        return (c[0], c[1])
+    else:
+        return (x, x)
+
+def convert_completions(completions):
+    return [convert_completion(x) for x in completions]
 
 # def is_member_completion(view, caret):
 #     line = view.substr(Region(view.line(caret).a, caret))
@@ -328,9 +337,9 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
 
         if line.startswith("#include") or line.startswith("# include"):
             start = find_any_of(line, ['<', '"'])
-            if start != -1: completions = [(c, c,) for c in complete_includes(view, line[start+1:col] + prefix)]
+            if start != -1: completions = convert_completions(complete_includes(view, line[start+1:col] + prefix))
         else:
-            completions = get_completions(filename, get_args(view), row+1, col+1, "", timeout, get_unsaved_buffer(view))
+            completions = convert_completions(get_completions(filename, get_args(view), row+1, col+1, "", timeout, get_unsaved_buffer(view)))
             # completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, get_unsaved_buffer(view))
 
         return completions;

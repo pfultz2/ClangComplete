@@ -604,6 +604,11 @@ std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char
     return tus[filename];
 }
 
+PyObject* export_pystring(const std::string& x)
+{
+    return PyUnicode_FromString(x.c_str());
+}
+
 template<class Range>
 PyObject* export_pylist(const Range& r)
 {
@@ -618,14 +623,14 @@ PyObject* export_pylist(const Range& r)
 }
 
 template<class Range>
-PyObject* export_pylist_tuple(const Range& r)
+PyObject* export_pylist_completion(const Range& r)
 {
     PyObject* result = PyList_New(0);
 
     for (const auto& s:r)
     {
-        PyList_Append(result, PyTuple_Pack(2, PyUnicode_FromString(std::get<1>(s).c_str()),
-                                       PyUnicode_FromString(std::get<2>(s).c_str())));
+        auto c = export_pystring(std::get<1>(s) + "\n" + std::get<2>(s));
+        PyList_Append(result, c);
     }
 
     return result;
@@ -664,7 +669,7 @@ PyObject* clang_complete_get_completions(
 {
     auto tu = get_tu(filename, args, argv, 200);
     if (tu == nullptr) return empty_pylist();
-    else return export_pylist_tuple(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
+    else return export_pylist_completion(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
 }
 
 PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
