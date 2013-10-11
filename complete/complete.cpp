@@ -533,7 +533,7 @@ std::unordered_map<std::string, std::shared_ptr<async_translation_unit>> tus;
 std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char ** args, int argv, int timeout=-1)
 {
     std::unique_lock<std::timed_mutex> lock(tus_mutex, std::defer_lock);
-    if (timeout < 0) return lock.lock();
+    if (timeout < 0) lock.lock();
     else if (!lock.try_lock_for(std::chrono::milliseconds(timeout))) return {};
 
     if (tus.find(filename) == tus.end())
