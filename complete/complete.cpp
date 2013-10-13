@@ -33,6 +33,8 @@ std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
 
 #define DUMP_TIMER() DUMP(dump_log_timer)
 
+#define DUMP_LOG_TIME(x) dump_log << x << ": " << dump_log_timer.reset().count() << std::endl
+
 #else
 
 #define DUMP(x)
@@ -40,6 +42,8 @@ std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
 #define TIMER()
 
 #define DUMP_TIMER()
+
+#define DUMP_LOG_TIME(x)
 
 #endif
 
@@ -69,9 +73,11 @@ public:
     {
         if (run) this->reset();
     }
-    void reset()
+    milliseconds reset()
     {
+        milliseconds x = this->elapsed();
         this->start = clock_type::now();
+        return x;
     }
     milliseconds elapsed() const
     {
@@ -168,6 +174,11 @@ class translation_unit
         completion_results(CXCodeCompleteResults* r)
         {
             this->results = std::shared_ptr<CXCodeCompleteResults>(r, &clang_disposeCodeCompleteResults);
+        }
+
+        std::size_t size() const
+        {
+            return results->NumResults;
         }
 
         iterator begin()
@@ -369,19 +380,28 @@ public:
 
     typedef std::tuple<std::size_t, std::string, std::string> completion;
 
-    std::set<completion> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
+    std::vector<completion> complete_at(unsigned line, unsigned col, const char * prefix, const char * buffer=nullptr, unsigned len=0)
     {
         std::lock_guard<std::timed_mutex> lock(this->m);
         TIMER();
-        std::set<completion> results;
-        for(auto& c:this->completions_at(line, col, buffer, len))
+        std::vector<completion> results;
+
+        std::string display;
+        std::string replacement;
+        std::string description;
+        char buf[1024];
+        auto completions = this->completions_at(line, col, buffer, len);
+        DUMP_LOG_TIME("Clang to complete");
+        results.reserve(completions.size());
+        for(auto& c:completions)
         {
             auto priority = clang_getCompletionPriority(c.CompletionString);
             auto ck = c.CursorKind;
+            auto num = clang_getNumCompletionChunks(c.CompletionString);
 
-            std::stringstream display;
-            std::stringstream replacement;
-            std::stringstream description;
+            display.reserve(num*8);
+            replacement.reserve(num*8);
+            description.clear();
 
             std::size_t idx = 1;
             for_each_completion_string(c, [&](const std::string& text, CXCompletionChunkKind kind)
@@ -401,38 +421,43 @@ public:
                 case CXCompletionChunk_Comma:
                 case CXCompletionChunk_HorizontalSpace:
                 case CXCompletionChunk_VerticalSpace:
-                    display << text;
-                    replacement << text;
+                    display += text;
+                    replacement += text;
                     break;
                 case CXCompletionChunk_TypedText:
-                    display << text;
-                    replacement << text;
+                    display += text;
+                    replacement += text;
                     if (ck == CXCursor_Constructor)
-                      replacement << " ${" << idx++ << ":v}";
+                    {
+                        std::snprintf(buf, 1024, "%lu", idx++);
+                        replacement.append(" ${").append(buf).append(":v}");
+                    }
                     break;
                 case CXCompletionChunk_Placeholder:
-                    display << text;
-                    replacement << "${" << idx++ << ":" << text << "}";
+                    display += text;
+                    std::snprintf(buf, 1024, "%lu", idx++);
+                    replacement.append("${").append(buf).append(":").append(text).append("}");
                     break;
                 case CXCompletionChunk_ResultType:
                 case CXCompletionChunk_Text:
                 case CXCompletionChunk_Informative:
                 case CXCompletionChunk_Equal:
-                    description << text << " ";
+                    description.append(text).append(" ");
                     break;
                 case CXCompletionChunk_Optional:
                 case CXCompletionChunk_SemiColon:
                     break;
                 }
             });
-            auto resp = std::make_tuple(priority, display.str() + "\t" + description.str(), replacement.str());
-            if (not std::get<1>(resp).empty() and not std::get<2>(resp).empty() and starts_with(std::get<2>(resp).c_str(), prefix)) 
-                results.insert(resp);
+            display.append("\t").append(description);
+            if (not display.empty() and not replacement.empty() and starts_with(display.c_str(), prefix)) 
+                results.emplace_back(priority, std::move(display), std::move(replacement));
         }
+        std::sort(results.begin(), results.end());
         // Perhaps a reparse can help rejuvenate clang?
         if (results.size() == 0) this->unsafe_reparse(buffer, len);
+        DUMP_LOG_TIME("Process completions");
         DUMP(results.size());
-        DUMP_TIMER();
         return results;
     }
 
@@ -501,8 +526,8 @@ class async_translation_unit : public translation_unit, public std::enable_share
 
     struct query
     {
-        std::future<std::set<completion>> results_future;
-        std::set<completion> results;
+        std::future<std::vector<completion>> results_future;
+        std::vector<completion> results;
         unsigned line;
         unsigned col;
 
@@ -514,7 +539,7 @@ class async_translation_unit : public translation_unit, public std::enable_share
             return std::make_pair(this->line, this->col);
         }
 
-        void set(std::future<std::set<completion>> && results_future, unsigned line, unsigned col)
+        void set(std::future<std::vector<completion>> && results_future, unsigned line, unsigned col)
         {
             this->results = {};
             this->results_future = std::move(results_future);
@@ -522,7 +547,7 @@ class async_translation_unit : public translation_unit, public std::enable_share
             this->col = col;
         }
 
-        std::set<completion> get(int timeout)
+        std::vector<completion> get(int timeout)
         {
             if (results_future.valid() and this->ready(timeout))
             {
@@ -548,7 +573,7 @@ public:
     {}
 
 
-    std::set<completion> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
+    std::vector<completion> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
     {
         
         std::unique_lock<std::timed_mutex> lock(this->async_mutex, std::defer_lock);
@@ -571,19 +596,19 @@ public:
             }), line, col);
         }
         auto completions = q.get(timeout);
-        std::set<completion> results;
         std::string pre = prefix;
         if (pre.empty())
         {
+            std::vector<completion> results;
             std::copy_if(completions.begin(), completions.end(), inserter(results, results.begin()), [&](const completion& x)
             { 
                 return istarts_with(std::get<2>(x), pre); 
             });
-            return results;
+            return std::move(results);
         }
         else
         {
-            return completions;
+            return std::move(completions);
         }
     }
 };
