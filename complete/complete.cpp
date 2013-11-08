@@ -178,7 +178,8 @@ class translation_unit
 
         std::size_t size() const
         {
-            return results->NumResults;
+            if (results == nullptr) return 0;
+            else return results->NumResults;
         }
 
         iterator begin()
@@ -641,7 +642,9 @@ PyObject* export_pylist(const Range& r)
 
     for (const auto& s:r)
     {
-        PyList_Append(result, PyUnicode_FromString(s.c_str()));
+        auto c = export_pystring(s);
+        PyList_Append(result, c);
+        // Py_DECREF(c);
     }
 
     return result;
@@ -656,6 +659,7 @@ PyObject* export_pylist_completion(const Range& r)
     {
         auto c = export_pystring(std::get<1>(s) + "\n" + std::get<2>(s));
         PyList_Append(result, c);
+        // Py_DECREF(c);
     }
 
     return result;
@@ -699,10 +703,13 @@ PyObject* clang_complete_get_completions(
 
 PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
 {
-    auto tu = get_tu(filename, args, argv);
-    tu->reparse(nullptr, 0);
-
-    return export_pylist(tu->get_diagnostics(250));
+    auto tu = get_tu(filename, args, argv, 200);
+    if (tu == nullptr) return empty_pylist();
+    else
+    {
+        tu->reparse(nullptr, 0);
+        return export_pylist(tu->get_diagnostics(250));
+    }
 }
 
 PyObject* clang_complete_get_usage(const char * filename, const char ** args, int argv)
