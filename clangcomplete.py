@@ -6,7 +6,7 @@
 
 import sublime, sublime_plugin
 
-from threading import Timer
+from threading import Timer, Lock
 from .complete.complete import get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
 import os, re, sys, bisect
 
@@ -107,10 +107,18 @@ def find_prefix(items, prefix):
     return items[bisect.bisect_left(items, prefix): bisect_right_prefix(items, prefix)]
 
 project_includes = {}
+includes_lock = Lock()
+
+def clear_includes_impl():
+    global project_includes
+    if includes_lock.acquire(timeout=10000):
+        project_includes = {}
+        includes_lock.release()
+    else:
+        print("Can't clear includes")
 
 def clear_includes():
-    global project_includes
-    project_includes = {}
+    sublime.set_timeout(lambda:clear_includes_impl() , 1)
 
 def search_include(path):
     start = len(path)
@@ -136,10 +144,18 @@ def find_includes(view, project_path):
 
 def get_includes(view):
     global project_includes
-    project_path = get_project_path(view)
-    if project_path not in project_includes:
-        project_includes[project_path] = find_includes(view, project_path)
-    return project_includes[project_path]
+    if includes_lock.acquire(blocking=False):
+        try:
+            project_path = get_project_path(view)
+            if project_path not in project_includes:
+                project_includes[project_path] = find_includes(view, project_path)
+            result = project_includes[project_path]
+        finally:
+            includes_lock.release()
+        return result
+    else:
+        print("Includes locked: return nothing")
+        return []
 
 def parse_slash(path, index):
     last = path.find('/', index)
@@ -380,7 +396,14 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
             return (completions)
 
     def on_activated_async(self, view):
+        print("on_activated_async")
+        if not is_supported_language(view): return
+        
+        print("on_activated_async: get_includes")
+        get_includes(view)
+        print("on_activated_async: complete_at")
         self.complete_at(view, "", view.sel()[0].begin(), 0)
+
 
     def on_post_save_async(self, view):
         if not is_supported_language(view): return
