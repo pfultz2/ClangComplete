@@ -22,6 +22,8 @@ extern "C"
         const char * buffer, 
         unsigned len);
 
+    PyObject* clang_complete_find_uses(const char * filename, const char ** args, int argv, unsigned line, unsigned col, const char * search);
+
     PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv);
 
     PyObject* clang_complete_get_usage(const char * filename, const char ** args, int argv);

@@ -7,7 +7,7 @@
 import sublime, sublime_plugin
 
 from threading import Timer, Lock
-from .complete.complete import get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
+from .complete.complete import find_uses, get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
 import os, re, sys, bisect
 
 def get_settings():
@@ -287,6 +287,23 @@ class ClangCompleteClearCache(sublime_plugin.TextCommand):
         clear_includes()
         clear_options()
         free_all()
+
+class ClangCompleteFindUses(sublime_plugin.TextCommand):
+    def run(self, edit):
+        print("Find Uses")
+        filename = self.view.file_name()
+        # The view hasnt finsished loading yet
+        if (filename is None): return
+
+        row, col = self.view.rowcol(self.view.sel()[0].begin())
+        uses = find_uses(filename, get_args(self.view), row+1, col+1, None)
+        self.view.window().show_quick_panel(uses, self.on_done, sublime.MONOSPACE_FONT, 0, lambda index:self.quick_open(uses, index))
+
+    def quick_open(self, uses, index):
+        self.view.window().open_file(uses[index], sublime.ENCODED_POSITION | sublime.TRANSIENT)
+
+    def on_done(self):
+        pass
 
 class ClangCompleteShowUsage(sublime_plugin.TextCommand):
     def run(self, edit):

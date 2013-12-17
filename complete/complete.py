@@ -17,6 +17,7 @@ complete = cdll.LoadLibrary('%s/libcomplete.so' % current_path)
 #
 #
 
+complete.clang_complete_find_uses.restype = py_object
 complete.clang_complete_get_completions.restype = py_object
 complete.clang_complete_get_diagnostics.restype = py_object
 complete.clang_complete_get_usage.restype = py_object
@@ -27,6 +28,11 @@ def convert_to_c_string_array(a):
     result = (c_char_p * len(a))()
     result[:] = [x.encode('utf-8') for x in a]
     return result
+
+def find_uses(filename, args, line, col, file_to_search):
+    search = None
+    if file_to_search is not None: search = file_to_search.encode('utf-8')
+    return complete.clang_complete_find_uses(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col, search)
 
 def get_completions(filename, args, line, col, prefix, timeout, unsaved_buffer):
     if unsaved_buffer is None and not os.path.exists(filename): return []

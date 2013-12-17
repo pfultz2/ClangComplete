@@ -12,7 +12,7 @@
         "keys": ["alt+d", "alt+t"]
     },
     {
-        "command": "clang_complete_show_usage",
+        "command": "clang_complete_find_uses",
         "keys": ["alt+d", "alt+u"]
     }
 ]

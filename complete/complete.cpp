@@ -251,8 +251,9 @@ public:
     struct cursor
     {
         CXCursor c;
+        CXTranslationUnit tu;
 
-        cursor(CXCursor c) : c(c)
+        cursor(CXCursor c, CXTranslationUnit tu) : c(c), tu(tu)
         {}
 
         CXCursorKind get_kind()
@@ -262,17 +263,17 @@ public:
 
         cursor get_reference()
         {
-            return cursor(clang_getCursorReferenced(this->c));
+            return cursor(clang_getCursorReferenced(this->c), this->tu);
         }
 
         cursor get_definition()
         {
-            return cursor(clang_getCursorDefinition(this->c));
+            return cursor(clang_getCursorDefinition(this->c), this->tu);
         }
 
         cursor get_type()
         {
-            return cursor(clang_getTypeDeclaration(clang_getCanonicalType(clang_getCursorType(this->c))));
+            return cursor(clang_getTypeDeclaration(clang_getCanonicalType(clang_getCursorType(this->c))), this->tu);
         }
 
         std::string get_display_name()
@@ -309,6 +310,48 @@ public:
             return to_std_string(clang_getFileName(f));
         }
 
+        std::vector<cursor> get_overloaded_cursors()
+        {
+            std::vector<cursor> result = {*this};
+            if (clang_getCursorKind(this->c) == CXCursor_OverloadedDeclRef)
+            {
+                for(int i=0;i<clang_getNumOverloadedDecls(this->c);i++)
+                {
+                    result.emplace_back(clang_getOverloadedDecl(this->c, i), this->tu);
+                }
+            }
+            return result;
+        }
+
+        template<class F>
+        struct find_references_trampoline
+        {
+            F f;
+            cursor * self;
+
+            find_references_trampoline(F f, cursor * self) : f(f), self(self)
+            {}
+            CXVisitorResult operator()(CXCursor c, CXSourceRange r) const
+            {
+                f(cursor(c, self->tu), r);
+                return CXVisit_Continue;
+            }
+        };
+
+        template<class F>
+        void find_references(const char* name, F f)
+        {
+            CXFile file = clang_getFile(this->tu, name);
+            find_references_trampoline<F> trampoline(f, this);
+            CXCursorAndRangeVisitor visitor = {};
+            visitor.context = &trampoline;
+            visitor.visit = [](void *context, CXCursor c, CXSourceRange r) -> CXVisitorResult
+            {
+                return (*(reinterpret_cast<find_references_trampoline<F>*>(context)))(c, r);
+            };
+            clang_findReferencesInFile(this->c, file, visitor);
+        }
+
         bool is_null()
         {
             return clang_Cursor_isNull(this->c);
@@ -328,7 +371,7 @@ public:
         if (name == nullptr) name = this->filename.c_str();
         CXFile f = clang_getFile(this->tu, name);
         CXSourceLocation loc = clang_getLocation(this->tu, f, line, col);
-        return cursor(clang_getCursor(this->tu, loc));
+        return cursor(clang_getCursor(this->tu, loc), this->tu);
     }
 
     void reparse(const char * buffer=nullptr, unsigned len=0)
@@ -513,6 +556,22 @@ public:
 
         return this->get_cursor_at(line, col).get_type_name();
 
+    }
+
+    std::set<std::string> find_uses_in(unsigned line, unsigned col, const char * name=nullptr)
+    {
+        std::lock_guard<std::timed_mutex> lock(this->m);
+        std::set<std::string> result;
+        if (name == nullptr) name = this->filename.c_str();
+        auto c = this->get_cursor_at(line, col);
+        for(auto oc:c.get_overloaded_cursors())
+        {
+            oc.find_references(name, [&](cursor ref, CXSourceRange r)
+            {
+                result.insert(ref.get_location_path());
+            });
+        }
+        return result;
     }
     
     ~translation_unit()
@@ -699,6 +758,13 @@ PyObject* clang_complete_get_completions(
     auto tu = get_tu(filename, args, argv, 200);
     if (tu == nullptr) return empty_pylist();
     else return export_pylist_completion(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
+}
+
+PyObject* clang_complete_find_uses(const char * filename, const char ** args, int argv, unsigned line, unsigned col, const char * search)
+{
+    auto tu = get_tu(filename, args, argv);
+
+    return export_pylist(tu->find_uses_in(line, col, search));
 }
 
 PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
