@@ -499,7 +499,7 @@ public:
         }
         std::sort(results.begin(), results.end());
         // Perhaps a reparse can help rejuvenate clang?
-        if (results.size() == 0) this->unsafe_reparse(buffer, len);
+        // if (results.size() == 0) this->unsafe_reparse(buffer, len);
         DUMP_LOG_TIME("Process completions");
         DUMP(results.size());
         return results;
