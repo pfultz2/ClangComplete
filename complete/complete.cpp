@@ -8,7 +8,7 @@
 #ifndef CLANG_UTILS_TRANSLATION_UNIT_H
 #define CLANG_UTILS_TRANSLATION_UNIT_H
 
-#include <python3.3/Python.h>
+#include <Python.h>
 #include <clang-c/Index.h>
 #include <iostream>
 #include <fstream>

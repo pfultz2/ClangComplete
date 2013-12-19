@@ -1,9 +1,13 @@
+CXX=g++
+FLAGS=`pkg-config --cflags python-3.3`
+LIBS=-lclang `pkg-config --cflags python-3.3`
+
 all:
-	g++ -std=c++11 -Os -c -fPIC complete.cpp -o complete.o
-	g++ -shared -Wl,-soname,libcomplete.so -o libcomplete.so complete.o -lclang -lpython3.3m
+	$(CXX) -std=gnu++0x $(FLAGS) -Os -c -fPIC complete.cpp -o complete.o
+	$(CXX) -shared -Wl,-soname,libcomplete.so -o libcomplete.so complete.o $(LIBS)
 debug:
-	g++ -std=c++11 -g -c -fPIC -DCLANG_COMPLETE_LOG complete.cpp -o complete.o
-	g++ -shared -Wl,-soname,libcomplete.so -o libcomplete.so complete.o -lclang -lpython3.3m
+	$(CXX) -std=gnu++0x $(FLAGS) -g -c -fPIC -DCLANG_COMPLETE_LOG complete.cpp -o complete.o
+	$(CXX) -shared -Wl,-soname,libcomplete.so -o libcomplete.so complete.o $(LIBS)
 log:
-	g++ -std=c++11 -Os -c -fPIC -DCLANG_COMPLETE_LOG complete.cpp -o complete.o
-	g++ -shared -Wl,-soname,libcomplete.so -o libcomplete.so complete.o -lclang -lpython3.3m
+	$(CXX) -std=gnu++0x $(FLAGS) -Os -c -fPIC -DCLANG_COMPLETE_LOG complete.cpp -o complete.o
+	$(CXX) -shared -Wl,-soname,libcomplete.so -o libcomplete.so complete.o $(LIBS)

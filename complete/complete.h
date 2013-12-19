@@ -7,7 +7,7 @@
 #ifndef CLANGCOMPLETE_COMPLETE_H
 #define CLANGCOMPLETE_COMPLETE_H
 
-#include <python3.3/object.h>
+#include <object.h>
 
 extern "C"
 {
