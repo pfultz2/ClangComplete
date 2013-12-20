@@ -381,7 +381,7 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         filename = view.file_name()  
         # The view hasnt finsished loading yet
         if (filename is None): return []      
-        return get_diagnostics(filename, get_args(view))
+        return [diag for diag in get_diagnostics(filename, get_args(view)) if 'unknown warning option' not in diag]
 
     def show_diagnostics(self, view):
         output = '\n'.join(self.diagnostics(view))
