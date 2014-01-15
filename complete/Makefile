@@ -2,9 +2,11 @@ CXX=g++
 PYTHON_FLAGS=$(shell pkg-config --cflags python-3.3)
 PYTHON_LIBS=$(shell pkg-config --libs python-3.3)
 
-CLANG_PREFIX=$(shell (cd /usr/local/include/clang-c/ && cd ../.. && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.5/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.4/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.3/ && pwd) 2> /dev/null)
-CLANG_FLAGS=-I$(CLANG_PREFIX)/include/
-CLANG_LIBS=-L$(CLANG_PREFIX)/lib/ -Wl,-rpath=$(CLANG_PREFIX)/lib -lclang
+CLANG_INC_DIR := $(shell llvm-config --includedir)
+CLANG_LIB_DIR := $(shell llvm-config --libdir)
+CLANG_FLAGS=-I$(CLANG_INC_DIR)
+CLANG_LIBS=-L$(CLANG_LIB_DIR) -Wl,-rpath=$(CLANG_LIB_DIR) -lclang
+
 
 FLAGS=$(PYTHON_FLAGS) $(CLANG_FLAGS)
 LIBS=$(PYTHON_LIBS) $(CLANG_LIBS)
