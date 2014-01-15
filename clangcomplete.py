@@ -8,7 +8,7 @@ import sublime, sublime_plugin
 
 from threading import Timer, Lock
 from .complete.complete import find_uses, get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
-import os, re, sys, bisect
+import os, re, sys, bisect, json
 
 def get_settings():
     return sublime.load_settings("ClangComplete.sublime-settings")
@@ -49,10 +49,28 @@ def parse_flags(f, pflags=[]):
             flags.extend([word for word in words if check_include(word)])
     return flags
 
+def parse_compile_commands(root, f):
+    flags = []
+    compile_commands = json.load(open(os.path.join(root, f)))
+    for obj in compile_commands:
+        for key, value in obj.items():
+            if key == "command":
+                for string in value.split():
+                    if string.startswith('-') and not string.startswith(('-g', '-o', '-c')) and not string in flags:
+                        # ninja adds local paths as -I. and -I..
+                        # make adds full paths as i flags
+                        if string == '-I.': flags.append('-I' + root)
+                        elif string == '-I..': flags.append('-I' + os.path.join(root, ".."))
+                        else: flags.append(string)
+    return flags
+
 def accumulate_options(path):
     flags = []
     for root, dirs, filenames in os.walk(path):
         for f in filenames:
+            if f.endswith('compile_commands.json'):
+                flags.extend(parse_compile_commands(root, f))
+                return flags;
             if f.endswith('flags.make'): flags.extend(parse_flags(os.path.join(root, f), flags))
     return flags
 
