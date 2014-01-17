@@ -8,7 +8,7 @@ import sublime, sublime_plugin
 
 from threading import Timer, Lock
 from .complete.complete import find_uses, get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
-import os, re, sys, bisect, json
+import os, re, sys, bisect, json, fnmatch
 
 def get_settings():
     return sublime.load_settings("ClangComplete.sublime-settings")
@@ -34,19 +34,12 @@ def get_unsaved_buffer(view):
 # Retrieve options from cmake 
 #
 #
-def parse_flags(f, pflags=[]):
+def parse_flags(f):
     flags = []
-    flag_set = set(pflags)
-    def check_include(word):
-        if word.startswith('-I') or word.startswith("-D"):
-            return word not in flag_set
-        else:
-            return word != '-g'
-
     for line in open(f).readlines():
         if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES'):
             words = line[line.index('=')+1:].split()
-            flags.extend([word for word in words if check_include(word)])
+            flags.extend([word for word in words if not word.startswith('-g')])
     return flags
 
 def parse_compile_commands(root, f):
@@ -55,8 +48,9 @@ def parse_compile_commands(root, f):
     for obj in compile_commands:
         for key, value in obj.items():
             if key == "command":
-                for string in value.split():
-                    if string.startswith('-') and not string.startswith(('-g', '-o', '-c')) and not string in flags:
+                for string in value.split()[1:]:
+                    if string.startswith(('-o', '-c')): break
+                    if not string.startswith('-g'):
                         # ninja adds local paths as -I. and -I..
                         # make adds full paths as i flags
                         if string == '-I.': flags.append('-I' + root)
@@ -64,15 +58,44 @@ def parse_compile_commands(root, f):
                         else: flags.append(string)
     return flags
 
+def merge_flags(flags, pflags):
+    result = []
+    def append_result(f):
+        if f.startswith(('-I', '-D', '-isystem', '-include', '-W', '-std', '-pthread')):
+            if f not in pflags and f not in result: result.append(f)
+        else: result.append(f)
+    flags_to_merge = ['-isystem', '-include']
+    prev_flag = ""
+    for f in flags:
+        if len(prev_flag) > 0:
+            append_result(prev_flag + ' ' + f)
+            prev_flag = ""
+        elif f in flags_to_merge: prev_flag = f
+        else: append_result(f)
+    return result
+
+def filter_flag(f):
+    exclude_flags = ['-W*unused-but-set-variable', '-W*maybe-uninitialized', '-W*logical-op']
+    for pat in exclude_flags:
+        if fnmatch.fnmatch(f, pat): return False
+    return True
+
+def split_flags(flags):
+    result = []
+    for f in flags:
+        if filter_flag(f): result.extend(f.split())
+    return result
+
 def accumulate_options(path):
     flags = []
     for root, dirs, filenames in os.walk(path):
         for f in filenames:
             if f.endswith('compile_commands.json'):
-                flags.extend(parse_compile_commands(root, f))
-                return flags;
-            if f.endswith('flags.make'): flags.extend(parse_flags(os.path.join(root, f), flags))
-    return flags
+               flags.extend(merge_flags(parse_compile_commands(root, f), flags))
+               return split_flags(flags);
+            if f.endswith('flags.make'): 
+                flags.extend(merge_flags(parse_flags(os.path.join(root, f)), flags))
+    return split_flags(flags)
 
 project_options = {}
 
@@ -97,6 +120,7 @@ def get_args(view):
     additional_options = get_setting(view, "additional_options", [])
     build_dir = get_setting(view, "build_dir", "build")
     default_options = get_setting(view, "default_options", ["-std=c++11"])
+    # print(get_options(project_path, additional_options, build_dir, default_options))
     return get_options(project_path, additional_options, build_dir, default_options)
 
 #
@@ -399,7 +423,7 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         filename = view.file_name()  
         # The view hasnt finsished loading yet
         if (filename is None): return []      
-        return [diag for diag in get_diagnostics(filename, get_args(view)) if 'unknown warning option' not in diag]
+        return [diag for diag in get_diagnostics(filename, get_args(view))]
 
     def show_diagnostics(self, view):
         output = '\n'.join(self.diagnostics(view))
