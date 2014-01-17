@@ -225,26 +225,40 @@ class translation_unit
         return {};
     }
 
+    static unsigned code_complete_options()
+    {
+        return CXCodeComplete_IncludeMacros | CXCodeComplete_IncludeCodePatterns | CXCodeComplete_IncludeBriefComments;
+    }
+
     completion_results completions_at(unsigned line, unsigned col, const char * buffer, unsigned len)
     {
         if (buffer == nullptr) 
         {
-            return clang_codeCompleteAt(this->tu, this->filename.c_str(), line, col, nullptr, 0, CXCodeComplete_IncludeMacros);
+            return clang_codeCompleteAt(this->tu, this->filename.c_str(), line, col, nullptr, 0, code_complete_options());
         }
         else
         {
             auto unsaved = this->unsaved_buffer(buffer, len);
-            return clang_codeCompleteAt(this->tu, this->filename.c_str(), line, col, &unsaved, 1, CXCodeComplete_IncludeMacros);
+            return clang_codeCompleteAt(this->tu, this->filename.c_str(), line, col, &unsaved, 1, code_complete_options());
         }
+    }
+
+    static unsigned parse_options()
+    {
+        return CXTranslationUnit_DetailedPreprocessingRecord | 
+            CXTranslationUnit_Incomplete | 
+            CXTranslationUnit_PrecompiledPreamble | 
+            CXTranslationUnit_CacheCompletionResults | 
+            CXTranslationUnit_IncludeBriefCommentsInCodeCompletion;
     }
 
     void unsafe_reparse(const char * buffer=nullptr, unsigned len=0)
     {
-        if (buffer == nullptr) clang_reparseTranslationUnit(this->tu, 0, nullptr, clang_defaultReparseOptions(this->tu));
+        if (buffer == nullptr) clang_reparseTranslationUnit(this->tu, 0, nullptr, parse_options());
         else
         {
             auto unsaved = this->unsaved_buffer(buffer, len);
-            clang_reparseTranslationUnit(this->tu, 1, &unsaved, clang_defaultReparseOptions(this->tu));
+            clang_reparseTranslationUnit(this->tu, 1, &unsaved, parse_options());
         }
     }
 public:
@@ -360,7 +374,7 @@ public:
     translation_unit(const char * filename, const char ** args, int argv) : filename(filename)
     {
         // this->index = clang_createIndex(1, 1);
-        this->tu = clang_parseTranslationUnit(get_index(), filename, args, argv, NULL, 0, clang_defaultEditingTranslationUnitOptions());
+        this->tu = clang_parseTranslationUnit(get_index(), filename, args, argv, NULL, 0, parse_options());
         detach_async([=]() { this->reparse(); });
     }
 
