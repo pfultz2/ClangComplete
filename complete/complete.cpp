@@ -670,9 +670,9 @@ public:
             }), line, col);
         }
         auto completions = q.get(timeout);
-        std::string pre = prefix;
-        if (pre.empty())
+        if (prefix != nullptr and *prefix != 0)
         {
+            std::string pre = prefix;
             std::vector<completion> results;
             std::copy_if(completions.begin(), completions.end(), inserter(results, results.begin()), [&](const completion& x)
             { 
