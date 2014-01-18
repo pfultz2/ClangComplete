@@ -509,6 +509,8 @@ public:
                 }
             });
             display.append("\t").append(description);
+            // Lower priority for completions that start with `operator` and `~`
+            if (starts_with(display.c_str(), "operator") or starts_with(display.c_str(), "~")) priority = std::numeric_limits<decltype(priority)>::max();
             if (not display.empty() and not replacement.empty() and starts_with(display.c_str(), prefix)) 
                 results.emplace_back(priority, std::move(display), std::move(replacement));
         }
