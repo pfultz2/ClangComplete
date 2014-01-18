@@ -307,6 +307,7 @@ def is_supported_language(view):
 
 
 member_regex = re.compile(r"(([a-zA-Z_]+[0-9_]*)|([\)\]])+)((\.)|(->))$")
+not_code_regex = re.compile("(string.)|(comment.)")
 
 def convert_completion(x):
     if '\n' in x:
@@ -319,7 +320,7 @@ def convert_completions(completions):
     return [convert_completion(x) for x in completions]
 
 # def is_member_completion(view, caret):
-#     line = view.substr(Region(view.line(caret).a, caret))
+#     line = view.substr(sublime.Region(view.line(caret).a, caret))
 #     if member_regex.search(line) != None:
 #         return True
 #     elif get_language(view).startswith("objc"):
@@ -399,7 +400,35 @@ class ClangCompleteShowType(sublime_plugin.TextCommand):
 
         sublime.status_message(type)
 
-class ClangCompleteCompletion(sublime_plugin.EventListener):
+class ClangCompleteComplete(sublime_plugin.TextCommand):
+    def show_complete(self):
+        self.view.run_command("hide_auto_complete")
+        sublime.set_timeout(lambda: self.view.run_command("auto_complete"), 1)
+
+    def run(self, edit, characters):
+        debug_print("ClangCompleteComplete")
+        regions = [a for a in self.view.sel()]
+        self.view.sel().clear()
+        for region in reversed(regions):
+            pos = 0
+            region.end() + len(characters)
+            if region.size() > 0:
+                self.view.replace(edit, region, characters)
+                pos = region.begin() + len(characters)
+            else:
+                self.view.insert(edit, region.end(), characters)
+                pos = region.end() + len(characters)
+
+            self.view.sel().add(sublime.Region(pos, pos))
+        caret = self.view.sel()[0].begin()
+        word = self.view.substr(self.view.word(caret)).strip()
+        debug_print("Complete", word)
+        triggers = ['->', '::', '.']
+        if word in triggers:
+            debug_print("Popup completions")
+            self.show_complete()
+
+class ClangCompleteAutoComplete(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):
         debug_print("complete_at", prefix)
         filename = view.file_name()
@@ -428,16 +457,8 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
             row, col = view.rowcol(p)
             # debug_print("complete: ", row, col, word)
             completions = convert_completions(get_completions(filename, get_args(view), row+1, col+1, "", timeout, get_unsaved_buffer(view)))
-            # completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, get_unsaved_buffer(view))
 
-        return completions;
-
-    def show_complete(self, view):
-        view.run_command("auto_complete")
-
-    def hide_complete(self, view):
-        view.run_command("hide_auto_complete")
-
+        return completions
 
 
     def diagnostics(self, view):
@@ -459,7 +480,6 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         
         if 'delete' in name: return
         
-        # TODO: Adjust position to begining of word boundary
         pos = view.sel()[0].begin()
         self.complete_at(view, "", pos, 0)
         
@@ -496,3 +516,12 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
     def on_close(self, view):
         if is_supported_language(view):
             free_tu(view.file_name())
+
+    def on_query_context(self, view, key, operator, operand, match_all):
+        if key == "clangcomplete_supported_language":
+            if view == None: view = sublime.active_window().active_view()
+            return is_supported_language(view)
+        elif key == "clangcomplete_is_code":
+            return not_code_regex.search(view.scope_name(view.sel()[0].begin())) == None
+        elif key == "clangcomplete_panel_visible":
+            return clang_error_panel.is_visible()

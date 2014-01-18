@@ -14,5 +14,28 @@
     {
         "command": "clang_complete_find_uses",
         "keys": ["alt+d", "alt+u"]
+    },
+    {
+        "command": "clang_complete_complete",
+        "args": {"characters": "."},
+        "keys": ["."],
+        "context": [ {"key": "clangcomplete_supported_language"}, {"key": "clangcomplete_is_code"}]
+    },
+    {
+        "command": "clang_complete_complete",
+        "args": {"characters": ":"},
+        "keys": [":"],
+        "context": [ {"key": "clangcomplete_supported_language"}, {"key": "clangcomplete_is_code"}]
+    },
+    {
+        "command": "clang_complete_complete",
+        "args": {"characters": ">"},
+        "keys": [">"],
+        "context": [ {"key": "clangcomplete_supported_language"}, {"key": "clangcomplete_is_code"}]
+    },
+    {
+        "command": "clang_complete_toggle_panel",
+        "keys": ["escape"],
+        "context": [{"key": "clang_panel_visible"}]
     }
 ]
