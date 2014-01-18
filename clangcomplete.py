@@ -408,12 +408,22 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
         completions = []
 
         line = view.substr(view.line(location))
-        row, col = view.rowcol(location - len(prefix))
 
         if line.startswith("#include") or line.startswith("# include"):
+            row, col = view.rowcol(location - len(prefix))
             start = find_any_of(line, ['<', '"'])
             if start != -1: completions = convert_completions(complete_includes(view, line[start+1:col] + prefix))
         else:
+            r = view.word(location - len(prefix))
+            word = view.substr(r)
+            # Skip completions for single colon or dash, since we want to
+            # optimize for completions after the `::` or `->` characters
+            if word == ':' or word == '-': return []
+            p = 0
+            if re.match('^\w+$', word):  p = r.begin()
+            else: p = r.end() - 1
+            row, col = view.rowcol(p)
+            # print("complete: ", row, col, word)
             completions = convert_completions(get_completions(filename, get_args(view), row+1, col+1, "", timeout, get_unsaved_buffer(view)))
             # completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, get_unsaved_buffer(view))
 
