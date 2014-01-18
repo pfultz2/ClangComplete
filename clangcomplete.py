@@ -29,6 +29,9 @@ def get_unsaved_buffer(view):
         buffer = view.substr(sublime.Region(0, view.size()))
     return buffer
 
+def debug_print(*args):
+    if get_settings().get("debug", False): print(*args)
+
 #
 #
 # Retrieve options from cmake 
@@ -112,7 +115,7 @@ def get_options(project_path, additional_options, build_dir, default_options):
     else:
         project_options[project_path] = ['-x', 'c++'] + default_options + additional_options
 
-    # print(project_path, project_options[project_path])
+    # debug_print(project_path, project_options[project_path])
     return project_options[project_path]
 
 def get_args(view):
@@ -120,7 +123,7 @@ def get_args(view):
     additional_options = get_setting(view, "additional_options", [])
     build_dir = get_setting(view, "build_dir", "build")
     default_options = get_setting(view, "default_options", ["-std=c++11"])
-    # print(get_options(project_path, additional_options, build_dir, default_options))
+    # debug_print(get_options(project_path, additional_options, build_dir, default_options))
     return get_options(project_path, additional_options, build_dir, default_options)
 
 #
@@ -157,7 +160,7 @@ def clear_includes_impl():
         project_includes = {}
         includes_lock.release()
     else:
-        print("Can't clear includes")
+        debug_print("Can't clear includes")
 
 def clear_includes():
     sublime.set_timeout(lambda:clear_includes_impl() , 1)
@@ -196,7 +199,7 @@ def get_includes(view):
             includes_lock.release()
         return result
     else:
-        print("Includes locked: return nothing")
+        debug_print("Includes locked: return nothing")
         return []
 
 def parse_slash(path, index):
@@ -332,7 +335,7 @@ class ClangCompleteClearCache(sublime_plugin.TextCommand):
 
 class ClangCompleteFindUses(sublime_plugin.TextCommand):
     def run(self, edit):
-        print("Find Uses")
+        debug_print("Find Uses")
         filename = self.view.file_name()
         # The view hasnt finsished loading yet
         if (filename is None): return
@@ -349,7 +352,7 @@ class ClangCompleteFindUses(sublime_plugin.TextCommand):
 
 class ClangCompleteShowUsage(sublime_plugin.TextCommand):
     def run(self, edit):
-        print("Show Usages")
+        debug_print("Show Usages")
         filename = self.view.file_name()
         # The view hasnt finsished loading yet
         if (filename is None): return
@@ -398,7 +401,7 @@ class ClangCompleteShowType(sublime_plugin.TextCommand):
 
 class ClangCompleteCompletion(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):
-        print("complete_at", prefix)
+        debug_print("complete_at", prefix)
         filename = view.file_name()
         # The view hasnt finsished loading yet
         if (filename is None): return []
@@ -423,11 +426,19 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
             if re.match('^\w+$', word):  p = r.begin()
             else: p = r.end() - 1
             row, col = view.rowcol(p)
-            # print("complete: ", row, col, word)
+            # debug_print("complete: ", row, col, word)
             completions = convert_completions(get_completions(filename, get_args(view), row+1, col+1, "", timeout, get_unsaved_buffer(view)))
             # completions = get_completions(filename, get_args(view), row+1, col+1, prefix, timeout, get_unsaved_buffer(view))
 
         return completions;
+
+    def show_complete(self, view):
+        view.run_command("auto_complete")
+
+    def hide_complete(self, view):
+        view.run_command("hide_auto_complete")
+
+
 
     def diagnostics(self, view):
         filename = view.file_name()  
@@ -458,19 +469,19 @@ class ClangCompleteCompletion(sublime_plugin.EventListener):
             return []
             
         completions = self.complete_at(view, prefix, locations[0], get_setting(view, "timeout", 200))
-        print("on_query_completions:", prefix, len(completions))
+        debug_print("on_query_completions:", prefix, len(completions))
         if (get_setting(view, "inhibit_sublime_completions", True)):
             return (completions, sublime.INHIBIT_WORD_COMPLETIONS | sublime.INHIBIT_EXPLICIT_COMPLETIONS)
         else:
             return (completions)
 
     def on_activated_async(self, view):
-        print("on_activated_async")
+        debug_print("on_activated_async")
         if not is_supported_language(view): return
         
-        print("on_activated_async: get_includes")
+        debug_print("on_activated_async: get_includes")
         get_includes(view)
-        print("on_activated_async: complete_at")
+        debug_print("on_activated_async: complete_at")
         self.complete_at(view, "", view.sel()[0].begin(), 0)
 
 
