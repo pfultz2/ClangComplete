@@ -234,6 +234,11 @@ class ClangErrorPanelFlush(sublime_plugin.TextCommand):
         self.view.erase(edit, sublime.Region(0, self.view.size()))
         self.view.insert(edit, 0, data)
 
+def is_view_visible(view, window=None):
+    ret = view != None and view.window() != None
+    if ret and window:
+        ret = view.window().id() == window.id()
+    return ret
 
 class ClangErrorPanel(object):
     def __init__(self):
@@ -248,10 +253,7 @@ class ClangErrorPanel(object):
         return self.view
 
     def is_visible(self, window=None):
-        ret = self.view != None and self.view.window() != None
-        if ret and window:
-            ret = self.view.window().id() == window.id()
-        return ret
+        return is_view_visible(self.view, window)
 
     def set_view(self, view):
         self.view = view
@@ -428,6 +430,11 @@ class ClangCompleteComplete(sublime_plugin.TextCommand):
             debug_print("Popup completions")
             self.show_complete()
 
+build_panel_window_id = None
+
+def is_build_panel_visible(window):
+    return build_panel_window_id != None and window.id() == build_panel_window_id
+
 class ClangCompleteAutoComplete(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):
         debug_print("complete_at", prefix)
@@ -471,8 +478,19 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
         output = '\n'.join(self.diagnostics(view))
         clang_error_panel.set_data(output)
         window = view.window()
-        if not window is None and len(output) > 1:
+        if not window is None and not is_build_panel_visible(window) and len(output) > 1:
             window.run_command("clang_toggle_panel", {"show": True})
+
+    def on_window_command(self, window, command_name, args):
+        global build_panel_window_id
+        debug_print(command_name, args)
+        if command_name == 'show_panel' and args['panel'] == 'output.exec':
+            if 'toggle' in args and args['toggle'] == True and build_panel_window_id != None: build_panel_window_id=None
+            else: build_panel_window_id = window.id()
+        if command_name == 'hide_panel':
+            if build_panel_window_id != None or ('panel' in args and args['panel'] == 'output.exec'):
+                build_panel_window_id = None
+        return None
 
 
     def on_post_text_command(self, view, name, args):
