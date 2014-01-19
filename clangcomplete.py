@@ -433,7 +433,7 @@ class ClangCompleteComplete(sublime_plugin.TextCommand):
 build_panel_window_id = None
 
 def is_build_panel_visible(window):
-    return build_panel_window_id != None and window.id() == build_panel_window_id
+    return build_panel_window_id != None and window != None and window.id() == build_panel_window_id
 
 class ClangCompleteAutoComplete(sublime_plugin.EventListener):
     def complete_at(self, view, prefix, location, timeout):
@@ -478,7 +478,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
         output = '\n'.join(self.diagnostics(view))
         clang_error_panel.set_data(output)
         window = view.window()
-        if not window is None and not is_build_panel_visible(window) and len(output) > 1:
+        if not window is None and len(output) > 1:
             window.run_command("clang_toggle_panel", {"show": True})
 
     def on_window_command(self, window, command_name, args):
@@ -526,7 +526,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
     def on_post_save_async(self, view):
         if not is_supported_language(view): return
         
-        self.show_diagnostics(view)
+        if not is_build_panel_visible(view.window()): self.show_diagnostics(view)
         
         pos = view.sel()[0].begin()
         self.complete_at(view, "", pos, 0)
