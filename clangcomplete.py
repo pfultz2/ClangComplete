@@ -210,7 +210,7 @@ def parse_slash(path, index):
 def complete_includes(view, prefix):
     slash_index = prefix.rfind('/') + 1
     paths = find_prefix(get_includes(view), prefix)
-    return set([parse_slash(path, slash_index) for path in paths])
+    return sorted(set([parse_slash(path, slash_index) for path in paths]))
 
 
 
