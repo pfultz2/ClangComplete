@@ -11,7 +11,8 @@
     // Additional paths that are searched when doing completion for include
     // directives. Generally, it should always be the default include paths
     // set by the compiler. To see the default search paths for the compiler
-    // type `echo | gcc -v -x c++ -E` into the command line.
+    // type `echo | `gcc -print-prog-name=cc1plus` -v -E` into the command
+    // line.
     "default_include_paths":
     [
         "/usr/include/c++/4.8",
@@ -23,7 +24,7 @@
         "/usr/include/x86_64-linux-gnu",
         "/usr/include"
     ],
-    // How long ClangComplete will wait for completions. This help prevent
+    // How long ClangComplete will wait for completions. This helps prevent
     // clang from blocking the gui thread.
     "timeout": 200,
     // Suppress sublime's completion suggestions
