@@ -120,7 +120,8 @@ def get_options(project_path, additional_options, build_dir, default_options):
 
 def get_args(view):
     project_path = get_project_path(view)
-    additional_options = get_setting(view, "additional_options", [])
+    default_includes = [("-isystem " + x) for x in get_setting(view, "default_include_paths", ["/usr/include", "/usr/local/include"])]
+    additional_options = get_setting(view, "additional_options", []) + default_includes
     build_dir = get_setting(view, "build_dir", "build")
     default_options = get_setting(view, "default_options", ["-std=c++11"])
     # debug_print(get_options(project_path, additional_options, build_dir, default_options))
