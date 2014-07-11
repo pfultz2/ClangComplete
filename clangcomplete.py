@@ -471,8 +471,16 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
     def diagnostics(self, view):
         filename = view.file_name()  
         # The view hasnt finsished loading yet
-        if (filename is None): return []      
-        return [diag for diag in get_diagnostics(filename, get_args(view))]
+        if (filename is None): return []
+        diagnostics = get_diagnostics(filename, get_args(view))
+        # If there are errors in the precompiled headers, then we will free
+        # the tu, and reload the diagnostics
+        for diag in diagnostics:
+            if "has been modified since the precompiled header":
+                free_tu(filename)
+                diagnostics = get_diagnostics(filename, get_args(view))
+                break
+        return [diag for diag in diagnostics]
 
     def show_diagnostics(self, view):
         output = '\n'.join(self.diagnostics(view))
