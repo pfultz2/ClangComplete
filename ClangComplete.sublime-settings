@@ -1,7 +1,7 @@
 {
     // Additional compiler options that are always added to the completion
     // parser
-    "additional_options": ["-Wno-c++11-narrowing", "-D__STRICT_ANSI__", "-DQT_NO_DEBUG", "-isystem", "/usr/local/lib/clang/3.3/include"],
+    "additional_options": ["-Wno-c++11-narrowing", "-D__STRICT_ANSI__", "-DQT_NO_DEBUG", "-isystem", "/usr/lib/llvm-3.4/lib/clang/3.4/include/"],
     // The cmake build directory where ClangCompletion will look for the
     // compiler flags
     "build_dir": "build",
@@ -11,19 +11,20 @@
     // Additional paths that are searched when doing completion for include
     // directives. Generally, it should always be the default include paths
     // set by the compiler. To see the default search paths for the compiler
-    // type `echo | gcc -v -x c++ -E` into the command line.
+    // type `echo | `gcc -print-prog-name=cc1plus` -v -E` into the command
+    // line.
     "default_include_paths":
     [
-        "/usr/include/c++/4.7",
-        "/usr/include/x86_64-linux-gnu/c++/4.7/.",
-        "/usr/include/c++/4.7/backward",
-        "/usr/lib/gcc/x86_64-linux-gnu/4.7/include",
+        "/usr/include/c++/4.8",
+        "/usr/include/x86_64-linux-gnu/c++/4.8/.",
+        "/usr/include/c++/4.8/backward",
+        "/usr/lib/gcc/x86_64-linux-gnu/4.8/include",
         "/usr/local/include",
-        "/usr/lib/gcc/x86_64-linux-gnu/4.7/include-fixed",
+        "/usr/lib/gcc/x86_64-linux-gnu/4.8/include-fixed",
         "/usr/include/x86_64-linux-gnu",
         "/usr/include"
     ],
-    // How long ClangComplete will wait for completions. This help prevent
+    // How long ClangComplete will wait for completions. This helps prevent
     // clang from blocking the gui thread.
     "timeout": 200,
     // Suppress sublime's completion suggestions
