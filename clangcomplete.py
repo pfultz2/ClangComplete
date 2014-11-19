@@ -7,7 +7,7 @@
 import sublime, sublime_plugin
 
 from threading import Timer, Lock
-from .complete.complete import find_uses, get_completions, get_diagnostics, get_usage, get_definition, get_type, reparse, free_tu, free_all
+from .complete.complete import find_uses, get_completions, get_diagnostics, get_definition, get_type, reparse, free_tu, free_all
 import os, re, sys, bisect, json, fnmatch
 
 def get_settings():
@@ -352,26 +352,6 @@ class ClangCompleteFindUses(sublime_plugin.TextCommand):
 
     def on_done(self):
         pass
-
-class ClangCompleteShowUsage(sublime_plugin.TextCommand):
-    def run(self, edit):
-        debug_print("Show Usages")
-        filename = self.view.file_name()
-        # The view hasnt finsished loading yet
-        if (filename is None): return
-
-        usage = get_usage(filename, get_args(self.view))
-        data = '\n'.join([key + ": " + str(value) for key, value in usage.items()])
-
-        panel = self.view.window().get_output_panel("clangusage")
-
-        panel.set_read_only(False)
-        panel.set_scratch(True)
-        panel.erase(edit, sublime.Region(0, panel.size()))
-        panel.insert(edit, 0, data)
-        panel.set_read_only(True)
-
-        self.view.window().run_command("show_panel", {"panel": "output.clangusage"})
 
 class ClangCompleteGotoDef(sublime_plugin.TextCommand):
     def run(self, edit):
