@@ -5,8 +5,12 @@
 # Copyright (c) 2013, Paul Fultz II
 
 from ctypes import cdll
+from ctypes import c_int
 from ctypes import c_char_p
+from ctypes import c_void_p
+from ctypes import c_uint
 from ctypes import py_object
+from copy import copy
 import os
 current_path = os.path.dirname(os.path.abspath(__file__))
 complete = cdll.LoadLibrary('%s/libcomplete.so' % current_path)
@@ -17,22 +21,34 @@ complete = cdll.LoadLibrary('%s/libcomplete.so' % current_path)
 #
 #
 
-complete.clang_complete_find_uses.restype = py_object
-complete.clang_complete_get_completions.restype = py_object
-complete.clang_complete_get_diagnostics.restype = py_object
-complete.clang_complete_get_usage.restype = py_object
-complete.clang_complete_get_definition.restype = py_object
-complete.clang_complete_get_type.restype = py_object
+complete.clang_complete_string_list_len.restype = c_int
+complete.clang_complete_string_list_at.restype = c_char_p
+complete.clang_complete_string_value.restype = c_char_p
+complete.clang_complete_find_uses.restype = c_uint
+complete.clang_complete_get_completions.restype = c_uint
+complete.clang_complete_get_diagnostics.restype = c_uint
+complete.clang_complete_get_definition.restype = c_uint
+complete.clang_complete_get_type.restype = c_uint
 
 def convert_to_c_string_array(a):
     result = (c_char_p * len(a))()
     result[:] = [x.encode('utf-8') for x in a]
     return result
 
+def convert_string_list(l):
+    result = [complete.clang_complete_string_list_at(l, i).decode('utf-8') for i in range(complete.clang_complete_string_list_len(l))]
+    complete.clang_complete_string_list_free(l)
+    return result
+
+def convert_string(s):
+    result = complete.clang_complete_string_value(s).decode('utf-8')
+    complete.clang_complete_string_free(s)
+    return result
+
 def find_uses(filename, args, line, col, file_to_search):
     search = None
     if file_to_search is not None: search = file_to_search.encode('utf-8')
-    return complete.clang_complete_find_uses(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col, search)
+    return convert_string_list(complete.clang_complete_find_uses(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col, search))
 
 def get_completions(filename, args, line, col, prefix, timeout, unsaved_buffer):
     if unsaved_buffer is None and not os.path.exists(filename): return []
@@ -41,19 +57,16 @@ def get_completions(filename, args, line, col, prefix, timeout, unsaved_buffer):
     buffer_len = 0
     if (buffer is not None): buffer_len = len(buffer)
 
-    return complete.clang_complete_get_completions(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col, prefix.encode('utf-8'), timeout, buffer, buffer_len)
+    return convert_string_list(complete.clang_complete_get_completions(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col, prefix.encode('utf-8'), timeout, buffer, buffer_len))
 
 def get_diagnostics(filename, args):
-    return complete.clang_complete_get_diagnostics(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
-
-def get_usage(filename, args):
-    return complete.clang_complete_get_usage(filename.encode('utf-8'), convert_to_c_string_array(args), len(args))
+    return convert_string_list(complete.clang_complete_get_diagnostics(filename.encode('utf-8'), convert_to_c_string_array(args), len(args)))
 
 def get_definition(filename, args, line, col):
-    return complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
+    return convert_string(complete.clang_complete_get_definition(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col))
 
 def get_type(filename, args, line, col):
-    return complete.clang_complete_get_type(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col)
+    return convert_string(complete.clang_complete_get_type(filename.encode('utf-8'), convert_to_c_string_array(args), len(args), line, col))
 
 def reparse(filename, args, unsaved_buffer):
     buffer = None

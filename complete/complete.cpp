@@ -8,7 +8,7 @@
 #ifndef CLANG_UTILS_TRANSLATION_UNIT_H
 #define CLANG_UTILS_TRANSLATION_UNIT_H
 
-#include <Python.h>
+// #include <Python.h>
 #include <clang-c/Index.h>
 #include <iostream>
 #include <fstream>
@@ -706,62 +706,133 @@ std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char
     return tus[filename];
 }
 
-PyObject* export_pystring(const std::string& x)
+template<class T>
+std::mutex& get_allocations_mutex()
 {
-    return PyUnicode_FromString(x.c_str());
+    static std::mutex m;
+    return m;
+}
+
+template<class T>
+std::unordered_map<unsigned int, T>& get_allocations()
+{
+    static std::mutex m;
+    static std::unordered_map<unsigned int, T> allocations;
+    return allocations;
+};
+
+template<class T>
+unsigned int new_wrapper()
+{
+    std::unique_lock<std::mutex> lock(get_allocations_mutex<T>());
+    unsigned int id = (get_allocations<T>().size() * 8 + sizeof(T)) % std::numeric_limits<unsigned int>::max();
+    while (get_allocations<T>().count(id) > 0 and id < (std::numeric_limits<unsigned int>::max() - 1)) id++;
+    assert(get_allocations<T>().count(id) == 0);
+    get_allocations<T>().emplace(id, T());
+    return id;
+} 
+
+template<class T>
+T& unwrap(unsigned int i)
+{
+    assert(i > 0);
+    std::unique_lock<std::mutex> lock(get_allocations_mutex<T>());
+    return get_allocations<T>().at(i);
+}
+
+template<class T>
+void free_wrapper(unsigned int i)
+{
+    std::unique_lock<std::mutex> lock(get_allocations_mutex<T>());
+    get_allocations<T>().erase(i);
+} 
+
+std::string& get_string(clang_complete_string s)
+{
+    return unwrap<std::string>(s);
+}
+
+unsigned int new_string(const std::string& s)
+{
+    auto i = new_wrapper<std::string>();
+    unwrap<std::string>(i) = std::string(s);
+    return i;
+}
+
+typedef std::vector<std::string> slist;
+
+slist& get_slist(clang_complete_string_list list)
+{
+    static slist empty_vec;
+    assert(empty_vec.empty());
+    if (list == 0) return empty_vec;
+    else return unwrap<slist>(list);
+}
+
+unsigned int new_slist()
+{
+    return new_wrapper<slist>();
+}
+
+unsigned int empty_slist()
+{
+    return 0;
 }
 
 template<class Range>
-PyObject* export_pylist(const Range& r)
+clang_complete_string_list export_slist(const Range& r)
 {
-    PyObject* result = PyList_New(0);
+    auto id = new_slist();
+    auto& list = get_slist(id);
 
     for (const auto& s:r)
     {
-        auto c = export_pystring(s);
-        PyList_Append(result, c);
-        // Py_DECREF(c);
+        list.push_back(s);
     }
 
-    return result;
+    return id;
 }
 
 template<class Range>
-PyObject* export_pylist_completion(const Range& r)
+clang_complete_string_list export_slist_completion(const Range& r)
 {
-    PyObject* result = PyList_New(0);
+    auto id = new_slist();
+    auto& list = get_slist(id);
 
     for (const auto& s:r)
     {
-        auto c = export_pystring(std::get<1>(s) + "\n" + std::get<2>(s));
-        PyList_Append(result, c);
-        // Py_DECREF(c);
+        list.push_back(std::get<1>(s) + "\n" + std::get<2>(s));
     }
 
-    return result;
+    return id;
 }
-
-template<class Range>
-PyObject* export_pydict_string_ulong(const Range& r)
-{
-    PyObject* result = PyDict_New();
-
-    for (const auto& p:r)
-    {
-        PyDict_SetItem(result, PyUnicode_FromString(p.first.c_str()), PyLong_FromUnsignedLong(p.second));
-    }
-
-    return result;
-}
-
-PyObject* empty_pylist()
-{
-    return PyList_New(0);
-}
-
 
 extern "C" {
-PyObject* clang_complete_get_completions(
+
+const char * clang_complete_string_value(clang_complete_string s)
+{
+    return get_string(s).c_str();
+}
+void clang_complete_string_free(clang_complete_string s)
+{
+    free_wrapper<std::string>(s);
+}
+void clang_complete_string_list_free(clang_complete_string_list list)
+{
+    free_wrapper<slist>(list);
+}
+int clang_complete_string_list_len(clang_complete_string_list list)
+{
+    if (list == 0) return 0;
+    else return get_slist(list).size();
+}
+const char * clang_complete_string_list_at(clang_complete_string_list list, int index)
+{
+    if (list == 0) return nullptr;
+    else return get_slist(list).at(index).c_str();
+}
+
+clang_complete_string_list clang_complete_get_completions(
         const char * filename, 
         const char ** args, 
         int argv, 
@@ -773,47 +844,40 @@ PyObject* clang_complete_get_completions(
         unsigned len)
 {
     auto tu = get_tu(filename, args, argv, 200);
-    if (tu == nullptr) return empty_pylist();
-    else return export_pylist_completion(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
+    if (tu == nullptr) return empty_slist();
+    else return export_slist_completion(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
 }
 
-PyObject* clang_complete_find_uses(const char * filename, const char ** args, int argv, unsigned line, unsigned col, const char * search)
+clang_complete_string_list clang_complete_find_uses(const char * filename, const char ** args, int argv, unsigned line, unsigned col, const char * search)
 {
     auto tu = get_tu(filename, args, argv);
 
-    return export_pylist(tu->find_uses_in(line, col, search));
+    return export_slist(tu->find_uses_in(line, col, search));
 }
 
-PyObject* clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
+clang_complete_string_list clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
 {
     auto tu = get_tu(filename, args, argv, 200);
-    if (tu == nullptr) return empty_pylist();
+    if (tu == nullptr) return empty_slist();
     else
     {
         tu->reparse(nullptr, 0);
-        return export_pylist(tu->get_diagnostics(250));
+        return export_slist(tu->get_diagnostics(250));
     }
 }
 
-PyObject* clang_complete_get_usage(const char * filename, const char ** args, int argv)
+clang_complete_string clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
     auto tu = get_tu(filename, args, argv);
 
-    return export_pydict_string_ulong(tu->get_usage());
+    return new_string(tu->get_definition(line, col));
 }
 
-PyObject* clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
+clang_complete_string clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
     auto tu = get_tu(filename, args, argv);
 
-    return PyUnicode_FromString(tu->get_definition(line, col).c_str());
-}
-
-PyObject* clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
-{
-    auto tu = get_tu(filename, args, argv);
-
-    return PyUnicode_FromString(tu->get_type(line, col).c_str());
+    return new_string(tu->get_type(line, col));
 }
 
 void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len)
