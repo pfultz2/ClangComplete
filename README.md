@@ -13,7 +13,7 @@ First, clone this repo into your sublime packages folder(it doesn't use Package 
 
     make
 
-This will build the `complete.so` binary. It requires development versions of Clang and Python 3.4 to build(packages `python3.4-dev` and `libclang-dev` on debian-based distros).
+This will build the `complete.so` binary. It requires the development version of Clang to build(the package `libclang-dev` on debian-based distros).
 
 Usage
 -----
