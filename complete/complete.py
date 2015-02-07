@@ -12,8 +12,12 @@ from ctypes import c_uint
 from ctypes import py_object
 from copy import copy
 import os
+import platform
 current_path = os.path.dirname(os.path.abspath(__file__))
-complete = cdll.LoadLibrary('%s/libcomplete.so' % current_path)
+suffix = 'so'
+if platform.system() == 'Darwin':
+    suffix = 'dylib'
+complete = cdll.LoadLibrary('%s/libcomplete.%s' % (current_path, suffix))
 
 #
 #
