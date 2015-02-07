@@ -13,7 +13,9 @@ First, clone this repo into your sublime packages folder(it doesn't use Package 
 
     make
 
-This will build the `complete.so` binary. It requires the development version of Clang to build(the package `libclang-dev` on debian-based distros).
+This will build the `complete.so` binary. It requires the development version of Clang to build(the package `libclang-dev` on debian-based distros). To get the appropriate development package on OS X, install LLVM via Homebrew:
+
+    brew install --with-clang --all-targets --rtti --universal --jit llvm
 
 Usage
 -----
@@ -33,7 +35,4 @@ Support
 
 [Donate](https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=HMB5AGA7DQ9NS&lc=US&item_name=Donation%20to%20clang%20complete&button_subtype=services&currency_code=USD&bn=PP%2dBuyNowBF%3abtn_paynow_LG%2egif%3aNonHosted)
 
-OSX Notes
----------
-First install llvm using homebrew:
-	brew install --with-clang --all-targets --rtti --universal --jit llvm
+    
