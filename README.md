@@ -32,3 +32,8 @@ Support
 -------
 
 [Donate](https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=HMB5AGA7DQ9NS&lc=US&item_name=Donation%20to%20clang%20complete&button_subtype=services&currency_code=USD&bn=PP%2dBuyNowBF%3abtn_paynow_LG%2egif%3aNonHosted)
+
+OSX Notes
+---------
+First install llvm using homebrew:
+	brew install --with-clang --all-targets --rtti --universal --jit llvm
