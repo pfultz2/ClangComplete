@@ -21,8 +21,10 @@ Installation Mac
 Download [Homebrew] (http://www.brew.sh) and install llvm using brew by running 
 `brew install llvm`
 then cd into the `complete` directory and type:
-    mv Makefile.mac Makefile
-    make
+````
+    mv Makefile.mac Makefile #replaces the current makefile with the mac version
+    make 
+````
 Usage
 -----
 
