@@ -15,6 +15,16 @@ First, clone this repo into your sublime packages folder(it doesn't use Package 
 
 This will build the `complete.so` binary. It requires the development version of Clang to build(the package `libclang-dev` on debian-based distros).
 
+
+Installation Mac
+------------
+Download [Homebrew] (http://www.brew.sh) and install llvm using brew by running 
+`brew install llvm`
+then cd into the `complete` directory and type:
+````
+    mv Makefile.mac Makefile #replaces the current makefile with the mac version
+    make 
+````
 Usage
 -----
 
