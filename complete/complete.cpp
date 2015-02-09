@@ -22,7 +22,7 @@
 #include <unordered_map>
 #include <cstring>
 #include <cassert>
-
+#include <vector>
 #include "complete.h"
 
 #ifdef CLANG_COMPLETE_LOG
