@@ -15,6 +15,16 @@ First, clone this repo into your sublime packages folder(it doesn't use Package 
 
 This will build the `complete.so` binary. It requires development versions of Clang and Python 3.4 to build(packages `python3.4-dev` and `libclang-dev` on debian-based distros).
 
+Installation Mac
+------------
+Download [Homebrew] (http://www.brew.sh) and install llvm using brew by running 
+`brew install llvm`
+then cd into the `complete` directory and type:
+````
+    make mac 
+````
+
+
 Usage
 -----
 
