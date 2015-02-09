@@ -18,11 +18,11 @@ This will build the `complete.so` binary. It requires the development version of
 
 Installation Mac
 ------------
-    Download [Homebrew] (http://www.brew.sh) and install llvm using brew by running 
-        `brew install llvm`
-    then cd into the `complete` directory and type:
-        `mv Makefile.mac Makefile`
-        `make`
+Download [Homebrew] (http://www.brew.sh) and install llvm using brew by running 
+`brew install llvm`
+then cd into the `complete` directory and type:
+`mv Makefile.mac Makefile`
+`make`
 Usage
 -----
 
