@@ -45,6 +45,10 @@ def parse_flags(f):
             flags.extend([word for word in words if not word.startswith('-g')])
     return flags
 
+def canonicalize_path(path, root):
+    if path.startswith('-I'): return '-I'+os.path.normpath(os.path.join(root, path[2:])) # rel or abs path
+    else: return path
+
 def parse_compile_commands(root, f):
     flags = []
     compile_commands = json.load(open(os.path.join(root, f)))
@@ -56,9 +60,7 @@ def parse_compile_commands(root, f):
                     if not string.startswith('-g'):
                         # ninja adds local paths as -I. and -I..
                         # make adds full paths as i flags
-                        if string == '-I.': flags.append('-I' + root)
-                        elif string == '-I..': flags.append('-I' + os.path.join(root, ".."))
-                        else: flags.append(string)
+                        flags.append(canonicalize_path(string, root))
     return flags
 
 def merge_flags(flags, pflags):
