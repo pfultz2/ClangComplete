@@ -456,7 +456,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
         # If there are errors in the precompiled headers, then we will free
         # the tu, and reload the diagnostics
         for diag in diagnostics:
-            if "has been modified since the precompiled header" in diag:
+            if "has been modified since the precompiled header" in diag or "modified since it was first processed" in diag:
                 free_tu(filename)
                 diagnostics = get_diagnostics(filename, get_args(view))
                 break
