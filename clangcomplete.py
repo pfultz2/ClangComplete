@@ -462,7 +462,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
                 free_tu(filename)
                 diagnostics = get_diagnostics(filename, get_args(view))
                 break
-        return [diag for diag in diagnostics]
+        return [diag for diag in diagnostics if "#pragma once in main file" not in diag]
 
     def show_diagnostics(self, view):
         output = '\n'.join(self.diagnostics(view))
