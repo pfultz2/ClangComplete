@@ -45,6 +45,10 @@ def parse_flags(f):
             flags.extend([word for word in words if not word.startswith('-g')])
     return flags
 
+def canonicalize_path(path, root):
+    if path.startswith('-I'): return '-I'+os.path.normpath(os.path.join(root, path[2:])) # rel or abs path
+    else: return path
+
 def parse_compile_commands(root, f):
     flags = []
     compile_commands = json.load(open(os.path.join(root, f)))
@@ -56,18 +60,16 @@ def parse_compile_commands(root, f):
                     if not string.startswith('-g'):
                         # ninja adds local paths as -I. and -I..
                         # make adds full paths as i flags
-                        if string == '-I.': flags.append('-I' + root)
-                        elif string == '-I..': flags.append('-I' + os.path.join(root, ".."))
-                        else: flags.append(string)
+                        flags.append(canonicalize_path(string, root))
     return flags
 
 def merge_flags(flags, pflags):
     result = []
     def append_result(f):
-        if f.startswith(('-I', '-D', '-isystem', '-include', '-W', '-std', '-pthread')):
+        if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-arch')):
             if f not in pflags and f not in result: result.append(f)
         else: result.append(f)
-    flags_to_merge = ['-isystem', '-include']
+    flags_to_merge = ['-isystem', '-include', '-isysroot', '-arch']
     prev_flag = ""
     for f in flags:
         if len(prev_flag) > 0:
@@ -456,11 +458,11 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
         # If there are errors in the precompiled headers, then we will free
         # the tu, and reload the diagnostics
         for diag in diagnostics:
-            if "has been modified since the precompiled header" in diag:
+            if "has been modified since the precompiled header" in diag or "modified since it was first processed" in diag:
                 free_tu(filename)
                 diagnostics = get_diagnostics(filename, get_args(view))
                 break
-        return [diag for diag in diagnostics]
+        return [diag for diag in diagnostics if "#pragma once in main file" not in diag]
 
     def show_diagnostics(self, view):
         output = '\n'.join(self.diagnostics(view))
