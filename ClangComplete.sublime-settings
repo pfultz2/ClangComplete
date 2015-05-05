@@ -4,7 +4,7 @@
     "additional_options": ["-Wno-c++11-narrowing", "-D__STRICT_ANSI__", "-DQT_NO_DEBUG", "-isystem", "/usr/lib/llvm-3.4/lib/clang/3.4/include/"],
     // The cmake build directory where ClangCompletion will look for the
     // compiler flags
-    "build_dir": "build",
+    "build_dir": ["build"],
     // If a valid build directory cannot be found then the default options
     // will be used instead
     "default_options": ["-std=c++11"],
