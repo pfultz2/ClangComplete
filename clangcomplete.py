@@ -516,7 +516,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
     def on_post_save_async(self, view):
         if not is_supported_language(view): return
         
-        if not is_build_panel_visible(view.window()): self.show_diagnostics(view)
+        if get_setting(view, "show_diagnostics_on_save", True) and not is_build_panel_visible(view.window()): self.show_diagnostics(view)
         
         pos = view.sel()[0].begin()
         self.complete_at(view, "", pos, 0)
