@@ -468,7 +468,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
         output = '\n'.join(self.diagnostics(view))
         clang_error_panel.set_data(output)
         window = view.window()
-        if not window is None and len(output) > 1:
+        if not window is None and len(output) > 1  and get_setting(view, "show_diagnostics_on_save", True):
             window.run_command("clang_toggle_panel", {"show": True})
 
     def on_window_command(self, window, command_name, args):
