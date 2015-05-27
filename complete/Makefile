@@ -15,7 +15,7 @@ ifeq ($(UNAME_S),Linux)
     LDFLAGS = -shared -Wl,-soname,$(LIB_NAME).so -o $(LIB_NAME).so $(SRC).o $(LIBS) -Wl,-rpath=$(CLANG_PREFIX)/lib
 endif
 ifeq ($(UNAME_S),Darwin)
-    LDFLAGS = -dynamiclib -Wl,-install_name,$(LIB_NAME).dylib -o $(LIB_NAME).dylib $(SRC).o $(LIBS)
+    LDFLAGS = -dynamiclib -Wl,-install_name,$(LIB_NAME).dylib -o $(LIB_NAME).dylib $(SRC).o $(LIBS) -lstdc++.6
 endif
 
 all:
