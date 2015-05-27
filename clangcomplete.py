@@ -130,7 +130,7 @@ def get_args(view):
     additional_options = get_setting(view, "additional_options", [])
     build_dir = get_build_dir(view)
     default_options = get_setting(view, "default_options", ["-std=c++11"])
-    # debug_print(get_options(project_path, additional_options, build_dir, default_options))
+    debug_print(get_options(project_path, additional_options, build_dir, default_options))
     return get_options(project_path, additional_options, build_dir, default_options)
 
 #
@@ -520,8 +520,14 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
 
     def on_post_save_async(self, view):
         if not is_supported_language(view): return
+
+        show_panel = None
+        show_diagnostics_on_save = get_setting(view, "show_diagnostics_on_save", "no_build")
+        if show_diagnostics_on_save == 'always': show_panel = True
+        elif show_diagnostics_on_save == 'never': show_panel = False
+        else: show_panel = not is_build_panel_visible(view.window())
         
-        if not is_build_panel_visible(view.window()): self.show_diagnostics(view)
+        if show_panel: self.show_diagnostics(view)
         
         pos = view.sel()[0].begin()
         self.complete_at(view, "", pos, 0)

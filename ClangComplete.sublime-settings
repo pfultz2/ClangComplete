@@ -28,5 +28,7 @@
     // clang from blocking the gui thread.
     "timeout": 200,
     // Suppress sublime's completion suggestions
-    "inhibit_sublime_completions": true
+    "inhibit_sublime_completions": true,
+    // Show clang diagnostics on save: always, no_build, or never
+    "show_diagnostics_on_save": "no_build"
 }
