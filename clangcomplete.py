@@ -202,6 +202,8 @@ def get_includes(view):
             if project_path not in project_includes:
                 project_includes[project_path] = find_includes(view, project_path)
             result = project_includes[project_path]
+        except:
+            pass
         finally:
             includes_lock.release()
         return result
@@ -297,12 +299,14 @@ clang_error_panel = ClangErrorPanel()
 language_regex = re.compile("(?<=source\.)[\w+#]+")
 
 def get_language(view):
-    caret = view.sel()[0].a
-    language = language_regex.search(view.scope_name(caret))
-    if language == None:
+    try:
+        caret = view.sel()[0].a
+        language = language_regex.search(view.scope_name(caret))
+        if language == None:
+            return None
+        return language.group(0)
+    except:
         return None
-    return language.group(0)
-
 
 def is_supported_language(view):
     language = get_language(view)
@@ -483,7 +487,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
             if 'toggle' in args and args['toggle'] == True and build_panel_window_id != None: build_panel_window_id=None
             else: build_panel_window_id = window.id()
         if command_name == 'hide_panel':
-            if build_panel_window_id != None or ('panel' in args and args['panel'] == 'output.exec'):
+            if build_panel_window_id != None or args != None and ('panel' in args and args['panel'] == 'output.exec'):
                 build_panel_window_id = None
         return None
 
