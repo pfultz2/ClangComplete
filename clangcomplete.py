@@ -482,7 +482,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
             if 'toggle' in args and args['toggle'] == True and build_panel_window_id != None: build_panel_window_id=None
             else: build_panel_window_id = window.id()
         if command_name == 'hide_panel':
-            if build_panel_window_id != None or ('panel' in args and args['panel'] == 'output.exec'):
+            if build_panel_window_id != None or args != None and ('panel' in args and args['panel'] == 'output.exec'):
                 build_panel_window_id = None
         return None
 
