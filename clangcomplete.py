@@ -197,6 +197,8 @@ def get_includes(view):
             if project_path not in project_includes:
                 project_includes[project_path] = find_includes(view, project_path)
             result = project_includes[project_path]
+        except:
+            pass
         finally:
             includes_lock.release()
         return result
@@ -292,12 +294,14 @@ clang_error_panel = ClangErrorPanel()
 language_regex = re.compile("(?<=source\.)[\w+#]+")
 
 def get_language(view):
-    caret = view.sel()[0].a
-    language = language_regex.search(view.scope_name(caret))
-    if language == None:
+    try:
+        caret = view.sel()[0].a
+        language = language_regex.search(view.scope_name(caret))
+        if language == None:
+            return None
+        return language.group(0)
+    except:
         return None
-    return language.group(0)
-
 
 def is_supported_language(view):
     language = get_language(view)
