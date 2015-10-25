@@ -24,8 +24,7 @@ def get_project_path(view):
         return view.window().folders()[0]
     except:
         pass
-    finally:
-        return ""
+    return ""
 
 
 def get_unsaved_buffer(view):
