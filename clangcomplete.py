@@ -20,7 +20,12 @@ def get_setting(view, key, default=None):
     return get_settings().get(key, default)
 
 def get_project_path(view):
-    return view.window().folders()[0]
+    try:
+        return view.window().folders()[0]
+    except:
+        pass
+    finally:
+        return ""
 
 
 def get_unsaved_buffer(view):
