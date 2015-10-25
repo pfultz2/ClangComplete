@@ -196,6 +196,7 @@ def find_includes(view, project_path):
 
 def get_includes(view):
     global project_includes
+    result = []
     if includes_lock.acquire(blocking=False):
         try:
             project_path = get_project_path(view)
@@ -206,10 +207,9 @@ def get_includes(view):
             pass
         finally:
             includes_lock.release()
-        return result
     else:
         debug_print("Includes locked: return nothing")
-        return []
+    return result
 
 def parse_slash(path, index):
     last = path.find('/', index)
