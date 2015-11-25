@@ -20,7 +20,11 @@ def get_setting(view, key, default=None):
     return get_settings().get(key, default)
 
 def get_project_path(view):
-    return view.window().folders()[0]
+    try:
+        return view.window().folders()[0]
+    except:
+        pass
+    return ""
 
 
 def get_unsaved_buffer(view):
@@ -40,7 +44,7 @@ def debug_print(*args):
 def parse_flags(f):
     flags = []
     for line in open(f).readlines():
-        if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES'):
+        if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES') or line.startswith('CXX_INCLUDES'):
             words = line[line.index('=')+1:].split()
             flags.extend([word for word in words if not word.startswith('-g')])
     return flags
@@ -196,6 +200,7 @@ def find_includes(view, project_path):
 
 def get_includes(view):
     global project_includes
+    result = []
     if includes_lock.acquire(blocking=False):
         try:
             project_path = get_project_path(view)
@@ -206,10 +211,9 @@ def get_includes(view):
             pass
         finally:
             includes_lock.release()
-        return result
     else:
         debug_print("Includes locked: return nothing")
-        return []
+    return result
 
 def parse_slash(path, index):
     last = path.find('/', index)
