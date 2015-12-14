@@ -45,7 +45,7 @@ def parse_flags(f):
     flags = []
     for line in open(f).readlines():
         if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES') or line.startswith('CXX_INCLUDES'):
-            words = re.findall('(-[^\s\"]+\"[^\"]+\"|-[^\s]*)',line[line.index('=')+1:])
+            words = re.findall('(-[^\s\"]+\"[^\"]+\"|[^\s]+)',line[line.index('=')+1:])
             flags.extend([word for word in words if not word.startswith('-g')])
     return flags
 
