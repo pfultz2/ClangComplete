@@ -70,7 +70,7 @@ def parse_compile_commands(root, f):
 def merge_flags(flags, pflags):
     result = []
     def append_result(f):
-        if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-arch')):
+        if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-f', '-pedantic', '-arch')):
             if f not in pflags and f not in result: result.append(f)
         else: result.append(f)
     flags_to_merge = ['-isystem', '-include', '-isysroot', '-arch']
