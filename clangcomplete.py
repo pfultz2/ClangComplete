@@ -45,7 +45,7 @@ def parse_flags(f):
     flags = []
     for line in open(f).readlines():
         if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES') or line.startswith('CXX_INCLUDES'):
-            words = line[line.index('=')+1:].split()
+            words = re.findall('(-[^\s\"]+\"[^\"]+\"|[^\s]+)',line[line.index('=')+1:])
             flags.extend([word for word in words if not word.startswith('-g')])
     return flags
 
@@ -92,7 +92,15 @@ def filter_flag(f):
 def split_flags(flags):
     result = []
     for f in flags:
-        if filter_flag(f): result.extend(f.split())
+        fm = re.match('(^-[^\s\"]+)(\"[^\"]+\"$)', f)
+        if fm:
+            option = fm.group(1)
+            path = fm.group(2)
+            path = path.replace('"','')
+
+            result.append(option)
+            result.append(path)
+        elif filter_flag(f): result.extend(f.split())
     return result
 
 def accumulate_options(path):

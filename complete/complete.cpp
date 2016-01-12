@@ -376,7 +376,7 @@ public:
     translation_unit(const char * filename, const char ** args, int argv) : filename(filename)
     {
         // this->index = clang_createIndex(1, 1);
-        this->tu = clang_parseTranslationUnit(get_index(), filename, args, argv, NULL, 0, parse_options());
+        this->tu = clang_createTranslationUnitFromSourceFile(get_index(), filename, argv, args, 0, nullptr );
         detach_async([=]() { this->reparse(); });
     }
 
