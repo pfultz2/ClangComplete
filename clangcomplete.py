@@ -8,7 +8,7 @@ import sublime, sublime_plugin
 
 from threading import Timer, Lock
 from .complete.complete import find_uses, get_completions, get_diagnostics, get_definition, get_type, reparse, free_tu, free_all
-import os, re, sys, bisect, json, fnmatch
+import os, re, sys, bisect, json, fnmatch, functools
 
 def get_settings():
     return sublime.load_settings("ClangComplete.sublime-settings")
@@ -89,10 +89,27 @@ def filter_flag(f):
         if fnmatch.fnmatch(f, pat): return False
     return True
 
+ordered_std_flags = ['-std=c++0x', '-std=gnu++0x', '-std=c++11', '-std=gnu++11', '-std=c++1y', '-std=gnu++1y', '-std=c++14', '-std=gnu++14', '-std=c++1z', '-std=gnu++1z', '-std=c++17', '-std=gnu++17']
+def find_index(l, elem):
+    for i,x in enumerate(l): 
+        if x == elem: return i
+    return -1
+
+def std_flag_rank(x):
+    return find_index(ordered_std_flags, x)
+
+
+def max_std(x, y):
+    if (std_flag_rank(x) > std_flag_rank(y)): return x
+    else: return y
+
 def split_flags(flags):
     result = []
+    std_flags = []
     for f in flags:
-        if filter_flag(f): result.extend(f.split())
+        if f.startswith('-std'): std_flags.append(f)
+        elif filter_flag(f): result.extend(f.split())
+    if len(std_flags) > 0: result.append(functools.reduce(max_std, std_flags))
     return result
 
 def accumulate_options(path):
