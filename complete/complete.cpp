@@ -27,7 +27,7 @@
 #include "complete.h"
 
 #ifdef CLANG_COMPLETE_LOG
-std::ofstream dump_log("/home/paul/clang_log", std::ios_base::app);
+std::ofstream dump_log("clang_log", std::ios_base::app);
 #define DUMP(x) dump_log << std::string(__PRETTY_FUNCTION__) << ": " << #x << " = " << x << std::endl
 
 #define TIMER() timer dump_log_timer(true);
