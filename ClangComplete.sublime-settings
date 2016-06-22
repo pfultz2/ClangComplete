@@ -1,7 +1,7 @@
 {
     // Additional compiler options that are always added to the completion
     // parser
-    "additional_options": ["-Wno-c++11-narrowing", "-D__STRICT_ANSI__", "-DQT_NO_DEBUG", "-isystem", "/usr/lib/llvm-3.6/lib/clang/3.6.0/include"],
+    "additional_options": ["-Wno-c++11-narrowing", "-D__STRICT_ANSI__", "-DQT_NO_DEBUG", "-isystem", "/usr/lib/llvm-3.8/lib/clang/3.8.0/include"],
     // The cmake build directory where ClangCompletion will look for the
     // compiler flags
     "build_dir": ["build"],
