@@ -1,7 +1,7 @@
 CXX=c++
 CXXFLAGS=-std=gnu++0x
 
-CLANG_PREFIX=$(shell (cd /usr/local/include/clang-c/ && cd ../.. && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.7/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.6/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.5/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.4/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.3/ && pwd) 2> /dev/null || (cd /usr/local/opt/llvm && pwd) 2> /dev/null)
+CLANG_PREFIX=$(shell (cd /usr/local/include/clang-c/ && cd ../.. && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.8/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.7/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.6/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.5/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.4/ && pwd) 2> /dev/null || (cd /usr/lib/llvm-3.3/ && pwd) 2> /dev/null || (cd /usr/local/opt/llvm && pwd) 2> /dev/null)
 CLANG_FLAGS=-I$(CLANG_PREFIX)/include/
 CLANG_LIBS=-L$(CLANG_PREFIX)/lib/ -lclang
 
