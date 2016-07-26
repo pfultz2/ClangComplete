@@ -8,7 +8,7 @@ import sublime, sublime_plugin
 
 from threading import Timer, Lock
 from .complete.complete import find_uses, get_completions, get_diagnostics, get_definition, get_type, reparse, free_tu, free_all
-import os, re, sys, bisect, json, fnmatch
+import os, re, sys, bisect, json, fnmatch, functools
 
 def get_settings():
     return sublime.load_settings("ClangComplete.sublime-settings")
@@ -20,7 +20,11 @@ def get_setting(view, key, default=None):
     return get_settings().get(key, default)
 
 def get_project_path(view):
-    return view.window().folders()[0]
+    try:
+        return view.window().folders()[0]
+    except:
+        pass
+    return ""
 
 
 def get_unsaved_buffer(view):
@@ -40,7 +44,7 @@ def debug_print(*args):
 def parse_flags(f):
     flags = []
     for line in open(f).readlines():
-        if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES'):
+        if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES') or line.startswith('CXX_INCLUDES'):
             words = line[line.index('=')+1:].split()
             flags.extend([word for word in words if not word.startswith('-g')])
     return flags
@@ -66,9 +70,9 @@ def parse_compile_commands(root, f):
 def merge_flags(flags, pflags):
     result = []
     def append_result(f):
-        if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-arch')):
+        if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-f', '-pedantic', '-arch', '-m')):
             if f not in pflags and f not in result: result.append(f)
-        else: result.append(f)
+        elif not f.startswith(('-O')): result.append(f)
     flags_to_merge = ['-isystem', '-include', '-isysroot', '-arch']
     prev_flag = ""
     for f in flags:
@@ -85,10 +89,27 @@ def filter_flag(f):
         if fnmatch.fnmatch(f, pat): return False
     return True
 
+ordered_std_flags = ['-std=c++0x', '-std=gnu++0x', '-std=c++11', '-std=gnu++11', '-std=c++1y', '-std=gnu++1y', '-std=c++14', '-std=gnu++14', '-std=c++1z', '-std=gnu++1z', '-std=c++17', '-std=gnu++17']
+def find_index(l, elem):
+    for i,x in enumerate(l): 
+        if x == elem: return i
+    return -1
+
+def std_flag_rank(x):
+    return find_index(ordered_std_flags, x)
+
+
+def max_std(x, y):
+    if (std_flag_rank(x) > std_flag_rank(y)): return x
+    else: return y
+
 def split_flags(flags):
     result = []
+    std_flags = []
     for f in flags:
-        if filter_flag(f): result.extend(f.split())
+        if f.startswith('-std'): std_flags.append(f)
+        elif filter_flag(f): result.extend(f.split())
+    if len(std_flags) > 0: result.append(functools.reduce(max_std, std_flags))
     return result
 
 def accumulate_options(path):
@@ -196,6 +217,7 @@ def find_includes(view, project_path):
 
 def get_includes(view):
     global project_includes
+    result = []
     if includes_lock.acquire(blocking=False):
         try:
             project_path = get_project_path(view)
@@ -206,10 +228,9 @@ def get_includes(view):
             pass
         finally:
             includes_lock.release()
-        return result
     else:
         debug_print("Includes locked: return nothing")
-        return []
+    return result
 
 def parse_slash(path, index):
     last = path.find('/', index)
