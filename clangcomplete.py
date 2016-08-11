@@ -83,9 +83,8 @@ def merge_flags(flags, pflags):
         else: append_result(f)
     return result
 
-def filter_flag(f):
-    exclude_flags = ['-W*unused-but-set-variable', '-W*maybe-uninitialized', '-W*logical-op']
-    for pat in exclude_flags:
+def filter_flag(f, exclude_options):
+    for pat in exclude_options:
         if fnmatch.fnmatch(f, pat): return False
     return True
 
@@ -103,16 +102,16 @@ def max_std(x, y):
     if (std_flag_rank(x) > std_flag_rank(y)): return x
     else: return y
 
-def split_flags(flags):
+def split_flags(flags, exclude_options):
     result = []
     std_flags = []
     for f in flags:
         if f.startswith('-std'): std_flags.append(f)
-        elif filter_flag(f): result.extend(f.split())
+        elif filter_flag(f, exclude_options): result.extend(f.split())
     if len(std_flags) > 0: result.append(functools.reduce(max_std, std_flags))
     return result
 
-def accumulate_options(path):
+def accumulate_options(path, exclude_options):
     flags = []
     for root, dirs, filenames in os.walk(path):
         for f in filenames:
@@ -121,7 +120,7 @@ def accumulate_options(path):
                return split_flags(flags);
             if f.endswith('flags.make'): 
                 flags.extend(merge_flags(parse_flags(os.path.join(root, f)), flags))
-    return split_flags(flags)
+    return split_flags(flags, exclude_options)
 
 project_options = {}
 
@@ -134,12 +133,12 @@ def get_build_dir(view):
     if isinstance(result, str): return [result]
     else: return result 
 
-def get_options(project_path, additional_options, build_dirs, default_options):
+def get_options(project_path, additional_options, exclude_options, build_dirs, default_options):
     if project_path in project_options: return project_options[project_path]
 
     build_dir = next((build_dir for d in build_dirs for build_dir in [os.path.join(project_path, d)] if os.path.exists(build_dir)), None)
     if build_dir != None:
-        project_options[project_path] = ['-x', 'c++'] + accumulate_options(build_dir) + additional_options
+        project_options[project_path] = ['-x', 'c++'] + accumulate_options(build_dir, exclude_options) + additional_options
     else:
         project_options[project_path] = ['-x', 'c++'] + default_options + additional_options
 
@@ -149,10 +148,11 @@ def get_options(project_path, additional_options, build_dirs, default_options):
 def get_args(view):
     project_path = get_project_path(view)
     additional_options = get_setting(view, "additional_options", [])
+    exclude_options = get_setting(view, "exclude_options", [])
     build_dir = get_build_dir(view)
     default_options = get_setting(view, "default_options", ["-std=c++11"])
-    debug_print(get_options(project_path, additional_options, build_dir, default_options))
-    return get_options(project_path, additional_options, build_dir, default_options)
+    debug_print(get_options(project_path, additional_options, exclude_options, build_dir, default_options))
+    return get_options(project_path, additional_options, exclude_options, build_dir, default_options)
 
 #
 #
