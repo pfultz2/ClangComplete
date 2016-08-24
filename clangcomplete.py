@@ -60,8 +60,7 @@ def parse_compile_commands(root, f):
         for key, value in obj.items():
             if key == "command":
                 for string in value.split()[1:]:
-                    if string.startswith(('-o', '-c')): break
-                    if not string.startswith('-g'):
+                    if string.startswith(('-f', '-I', '-i', '-W')):
                         # ninja adds local paths as -I. and -I..
                         # make adds full paths as i flags
                         flags.append(canonicalize_path(string, root))
