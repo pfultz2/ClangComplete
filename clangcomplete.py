@@ -41,10 +41,18 @@ def debug_print(*args):
 # Retrieve options from cmake 
 #
 #
-def parse_flags(f):
+types = {"c" : ("C_FLAGS", "C_DEFINES", "C_INCLUDES"),
+         "cpp" : ("CXX_FLAGS", "CXX_DEFINES", "CXX_INCLUDES"),
+         "objc" : ("OBJC_FLAGS", "OBJC_DEFINES", "OBJC_INCLUDES"),
+         "objc++" : ("OBJCXX_FLAGS", "OBJCXX_DEFINES", "OBJCXX_INCLUDES")
+         }
+
+def parse_flags(f, language):
     flags = []
+    if not language in types: return flags
+    fields = types[language]
     for line in open(f).readlines():
-        if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES') or line.startswith('CXX_INCLUDES'):
+        if line.startswith(fields):
             words = line[line.index('=')+1:].split()
             flags.extend([word for word in words if not word.startswith('-g')])
     return flags
@@ -60,8 +68,7 @@ def parse_compile_commands(root, f):
         for key, value in obj.items():
             if key == "command":
                 for string in value.split()[1:]:
-                    if string.startswith(('-o', '-c')): break
-                    if not string.startswith('-g'):
+                    if string.startswith(('-f', '-I', '-i', '-W')):
                         # ninja adds local paths as -I. and -I..
                         # make adds full paths as i flags
                         flags.append(canonicalize_path(string, root))
@@ -112,7 +119,7 @@ def split_flags(flags):
     if len(std_flags) > 0: result.append(functools.reduce(max_std, std_flags))
     return result
 
-def accumulate_options(path):
+def accumulate_options(path, language):
     flags = []
     for root, dirs, filenames in os.walk(path):
         for f in filenames:
@@ -120,7 +127,7 @@ def accumulate_options(path):
                flags.extend(merge_flags(parse_compile_commands(root, f), flags))
                return split_flags(flags);
             if f.endswith('flags.make'): 
-                flags.extend(merge_flags(parse_flags(os.path.join(root, f)), flags))
+                flags.extend(merge_flags(parse_flags(os.path.join(root, f), language), flags))
     return split_flags(flags)
 
 project_options = {}
@@ -134,12 +141,12 @@ def get_build_dir(view):
     if isinstance(result, str): return [result]
     else: return result 
 
-def get_options(project_path, additional_options, build_dirs, default_options):
+def get_options(project_path, additional_options, build_dirs, default_options, language):
     if project_path in project_options: return project_options[project_path]
 
     build_dir = next((build_dir for d in build_dirs for build_dir in [os.path.join(project_path, d)] if os.path.exists(build_dir)), None)
     if build_dir != None:
-        project_options[project_path] = ['-x', 'c++'] + accumulate_options(build_dir) + additional_options
+        project_options[project_path] = ['-x', 'c++'] + accumulate_options(build_dir, language) + additional_options
     else:
         project_options[project_path] = ['-x', 'c++'] + default_options + additional_options
 
@@ -147,12 +154,13 @@ def get_options(project_path, additional_options, build_dirs, default_options):
     return project_options[project_path]
 
 def get_args(view):
+    language = get_language(view)
     project_path = get_project_path(view)
     additional_options = get_setting(view, "additional_options", [])
     build_dir = get_build_dir(view)
     default_options = get_setting(view, "default_options", ["-std=c++11"])
-    debug_print(get_options(project_path, additional_options, build_dir, default_options))
-    return get_options(project_path, additional_options, build_dir, default_options)
+    debug_print(get_options(project_path, additional_options, build_dir, default_options, language))
+    return get_options(project_path, additional_options, build_dir, default_options, language)
 
 #
 #
