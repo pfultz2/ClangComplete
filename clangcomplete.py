@@ -117,7 +117,7 @@ def accumulate_options(path, exclude_options):
         for f in filenames:
             if f.endswith('compile_commands.json'):
                flags.extend(merge_flags(parse_compile_commands(root, f), flags))
-               return split_flags(flags);
+               return split_flags(flags, exclude_options)
             if f.endswith('flags.make'): 
                 flags.extend(merge_flags(parse_flags(os.path.join(root, f)), flags))
     return split_flags(flags, exclude_options)
