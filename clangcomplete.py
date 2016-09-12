@@ -44,9 +44,9 @@ def debug_print(*args):
 def parse_flags(f):
     flags = []
     for line in open(f).readlines():
-        if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES') or line.startswith('CXX_INCLUDES'):
+        if line.startswith(('CXX_FLAGS', 'CXX_DEFINES', 'CXX_INCLUDES', 'C_FLAGS', 'C_DEFINES', 'C_INCLUDES')):
             words = line[line.index('=')+1:].split()
-            flags.extend([word for word in words if not word.startswith('-g')])
+            flags.extend(words)
     return flags
 
 def canonicalize_path(path, root):
