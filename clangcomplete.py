@@ -44,9 +44,9 @@ def debug_print(*args):
 def parse_flags(f):
     flags = []
     for line in open(f).readlines():
-        if line.startswith('CXX_FLAGS') or line.startswith('CXX_DEFINES') or line.startswith('CXX_INCLUDES'):
+        if line.startswith(('CXX_FLAGS', 'CXX_DEFINES', 'CXX_INCLUDES', 'C_FLAGS', 'C_DEFINES', 'C_INCLUDES')):
             words = line[line.index('=')+1:].split()
-            flags.extend([word for word in words if not word.startswith('-g')])
+            flags.extend(words)
     return flags
 
 def canonicalize_path(path, root):
@@ -60,11 +60,9 @@ def parse_compile_commands(root, f):
         for key, value in obj.items():
             if key == "command":
                 for string in value.split()[1:]:
-                    if string.startswith(('-o', '-c')): break
-                    if not string.startswith('-g'):
-                        # ninja adds local paths as -I. and -I..
-                        # make adds full paths as i flags
-                        flags.append(canonicalize_path(string, root))
+                    # ninja adds local paths as -I. and -I..
+                    # make adds full paths as i flags
+                    flags.append(canonicalize_path(string, root))
     return flags
 
 def merge_flags(flags, pflags):
@@ -72,15 +70,14 @@ def merge_flags(flags, pflags):
     def append_result(f):
         if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-f', '-pedantic', '-arch', '-m', '-hc')):
             if f not in pflags and f not in result: result.append(f)
-        elif not f.startswith(('-O')): result.append(f)
-    flags_to_merge = ['-isystem', '-include', '-isysroot', '-arch']
-    prev_flag = ""
+        elif not f.startswith(('-O', '-o', '-c', '-g')) and f.startswith('-'): result.append(f)
+    flag = ""
     for f in flags:
-        if len(prev_flag) > 0:
-            append_result(prev_flag + ' ' + f)
-            prev_flag = ""
-        elif f in flags_to_merge: prev_flag = f
-        else: append_result(f)
+        if f.startswith('-'):
+            append_result(flag)
+            flag = f
+        else: flag = flag + ' ' + f
+    append_result(flag)
     return result
 
 def filter_flag(f, exclude_options):
