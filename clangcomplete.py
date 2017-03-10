@@ -70,7 +70,7 @@ def parse_compile_commands(root, f):
 def merge_flags(flags, pflags):
     result = []
     def append_result(f):
-        if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-f', '-pedantic', '-arch', '-m')):
+        if f.startswith(('-I', '-D', '-isystem', '-include', '-isysroot', '-W', '-std', '-pthread', '-f', '-pedantic', '-arch', '-m', '-hc')):
             if f not in pflags and f not in result: result.append(f)
         elif not f.startswith(('-O')): result.append(f)
     flags_to_merge = ['-isystem', '-include', '-isysroot', '-arch']
@@ -150,6 +150,7 @@ def get_args(view):
     additional_options = get_setting(view, "additional_options", [])
     exclude_options = get_setting(view, "exclude_options", [])
     build_dir = get_build_dir(view)
+    debug_print("build dirs:", build_dir)
     default_options = get_setting(view, "default_options", ["-std=c++11"])
     debug_print(get_options(project_path, additional_options, exclude_options, build_dir, default_options))
     return get_options(project_path, additional_options, exclude_options, build_dir, default_options)
