@@ -493,7 +493,7 @@ class ClangCompleteAutoComplete(sublime_plugin.EventListener):
         return [diag for diag in diagnostics if "#pragma once in main file" not in diag]
 
     def show_diagnostics(self, view):
-        output = '\n'.join(self.diagnostics(view))
+        output = '\n'.join([line for line in self.diagnostics(view) if "#pragma once in main file" not in line])
         clang_error_panel.set_data(output)
         window = view.window()
         if not window is None and len(output) > 1:
