@@ -247,9 +247,9 @@ class translation_unit
     static unsigned parse_options()
     {
         return 
+            CXTranslationUnit_KeepGoing | 
             CXTranslationUnit_DetailedPreprocessingRecord | 
             CXTranslationUnit_IncludeBriefCommentsInCodeCompletion |
-            CXTranslationUnit_Incomplete | 
             CXTranslationUnit_PrecompiledPreamble | 
             CXTranslationUnit_CacheCompletionResults;
     }
