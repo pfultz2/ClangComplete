@@ -30,6 +30,8 @@
 std::ofstream dump_log("clang_log", std::ios_base::app);
 #define DUMP(x) dump_log << std::string(__PRETTY_FUNCTION__) << ": " << #x << " = " << x << std::endl
 
+#define DUMP_FUNCTION dump_log << "Called: " << std::string(__PRETTY_FUNCTION__) << std::endl;
+
 #define TIMER() timer dump_log_timer(true);
 
 #define DUMP_TIMER() DUMP(dump_log_timer)
@@ -39,6 +41,8 @@ std::ofstream dump_log("clang_log", std::ios_base::app);
 #else
 
 #define DUMP(x)
+
+#define DUMP_FUNCTION
 
 #define TIMER()
 
@@ -653,7 +657,7 @@ public:
 
     std::vector<completion> async_complete_at(unsigned line, unsigned col, const char * prefix, int timeout, const char * buffer=nullptr, unsigned len=0)
     {
-        
+        DUMP_FUNCTION
         std::unique_lock<std::timed_mutex> lock(this->async_mutex, std::defer_lock);
         if (!lock.try_lock_for(std::chrono::milliseconds(20))) return {};
         
@@ -698,15 +702,42 @@ public:
     }
 };
 
-std::timed_mutex tus_mutex;
+std::timed_mutex tus_mutex{};
 std::unordered_map<std::string, std::shared_ptr<async_translation_unit>> tus;
+
+
+
+// #ifdef __MACH__
+// #include <sys/time.h>
+// #define CLOCK_MONOTONIC 0
+// //clock_gettime is not implemented on OSX
+// int clock_gettime(int /*clk_id*/, struct timespec* t) {
+//     struct timeval now;
+//     int rv = gettimeofday(&now, NULL);
+//     if (rv) return rv;
+//     t->tv_sec  = now.tv_sec;
+//     t->tv_nsec = now.tv_usec * 1000;
+//     return 0;
+// }
+// #endif
+
+
+// std::chrono::steady_clock::time_point
+// get_now()
+// {
+//     struct timespec tp{};
+//     // TODO: Check error
+//     clock_gettime(CLOCK_MONOTONIC, &tp);
+//     return std::chrono::steady_clock::time_point(std::chrono::seconds(tp.tv_sec) + std::chrono::nanoseconds(tp.tv_nsec));
+// }
 
 std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char ** args, int argv, int timeout=-1)
 {
+    DUMP_FUNCTION
     std::unique_lock<std::timed_mutex> lock(tus_mutex, std::defer_lock);
+    DUMP(timeout);
     if (timeout < 0) lock.lock();
-    else if (!lock.try_lock_for(std::chrono::milliseconds(timeout))) return {};
-
+    else if (!lock.try_lock_until(std::chrono::system_clock::now() + std::chrono::milliseconds(timeout))) return {};
     if (tus.find(filename) == tus.end())
     {
         tus[filename] = std::make_shared<async_translation_unit>(filename, args, argv);
@@ -717,6 +748,7 @@ std::shared_ptr<async_translation_unit> get_tu(const char * filename, const char
 template<class T>
 std::mutex& get_allocations_mutex()
 {
+    DUMP_FUNCTION
     static std::mutex m;
     return m;
 }
@@ -724,6 +756,7 @@ std::mutex& get_allocations_mutex()
 template<class T>
 std::unordered_map<unsigned int, T>& get_allocations()
 {
+    DUMP_FUNCTION
     static std::mutex m;
     static std::unordered_map<unsigned int, T> allocations;
     return allocations;
@@ -732,6 +765,7 @@ std::unordered_map<unsigned int, T>& get_allocations()
 template<class T>
 unsigned int new_wrapper()
 {
+    DUMP_FUNCTION
     std::unique_lock<std::mutex> lock(get_allocations_mutex<T>());
     unsigned int id = (get_allocations<T>().size() * 8 + sizeof(T)) % std::numeric_limits<unsigned int>::max();
     while (get_allocations<T>().count(id) > 0 and id < (std::numeric_limits<unsigned int>::max() - 1)) id++;
@@ -743,6 +777,7 @@ unsigned int new_wrapper()
 template<class T>
 T& unwrap(unsigned int i)
 {
+    DUMP_FUNCTION
     assert(i > 0);
     std::unique_lock<std::mutex> lock(get_allocations_mutex<T>());
     return get_allocations<T>().at(i);
@@ -751,17 +786,20 @@ T& unwrap(unsigned int i)
 template<class T>
 void free_wrapper(unsigned int i)
 {
+    DUMP_FUNCTION
     std::unique_lock<std::mutex> lock(get_allocations_mutex<T>());
     get_allocations<T>().erase(i);
 } 
 
 std::string& get_string(clang_complete_string s)
 {
+    DUMP_FUNCTION
     return unwrap<std::string>(s);
 }
 
 unsigned int new_string(const std::string& s)
 {
+    DUMP_FUNCTION
     auto i = new_wrapper<std::string>();
     unwrap<std::string>(i) = std::string(s);
     return i;
@@ -771,6 +809,7 @@ typedef std::vector<std::string> slist;
 
 slist& get_slist(clang_complete_string_list list)
 {
+    DUMP_FUNCTION
     static slist empty_vec;
     assert(empty_vec.empty());
     if (list == 0) return empty_vec;
@@ -779,17 +818,20 @@ slist& get_slist(clang_complete_string_list list)
 
 unsigned int new_slist()
 {
+    DUMP_FUNCTION
     return new_wrapper<slist>();
 }
 
 unsigned int empty_slist()
 {
+    DUMP_FUNCTION
     return 0;
 }
 
 template<class Range>
 clang_complete_string_list export_slist(const Range& r)
 {
+    DUMP_FUNCTION
     auto id = new_slist();
     auto& list = get_slist(id);
 
@@ -804,6 +846,7 @@ clang_complete_string_list export_slist(const Range& r)
 template<class Range>
 clang_complete_string_list export_slist_completion(const Range& r)
 {
+    DUMP_FUNCTION
     auto id = new_slist();
     auto& list = get_slist(id);
 
@@ -815,29 +858,78 @@ clang_complete_string_list export_slist_completion(const Range& r)
     return id;
 }
 
+template<class F, class Result=typename std::decay<decltype(std::declval<F>()())>::type>
+Result try_(F f)
+{
+    try
+    {
+        return f();
+    }
+    catch(const std::exception& e)
+    {
+        DUMP(e.what());
+        return Result{};
+    }
+    catch(...)
+    {
+        DUMP("Unknown exception");
+        return Result{};
+    }
+}
+
+template<class F>
+void try_void(F f)
+{
+    try
+    {
+        return f();
+    }
+    catch(const std::exception& e)
+    {
+        DUMP(e.what());
+    }
+    catch(...)
+    {
+        DUMP("Unknown exception");
+    }
+}
+
 extern "C" {
 
 const char * clang_complete_string_value(clang_complete_string s)
 {
-    return get_string(s).c_str();
+    DUMP_FUNCTION
+    return try_([&]{
+        return get_string(s).c_str();
+    });
 }
 void clang_complete_string_free(clang_complete_string s)
 {
+    DUMP_FUNCTION
     free_wrapper<std::string>(s);
 }
 void clang_complete_string_list_free(clang_complete_string_list list)
 {
+    DUMP_FUNCTION
     free_wrapper<slist>(list);
 }
 int clang_complete_string_list_len(clang_complete_string_list list)
 {
-    if (list == 0) return 0;
-    else return get_slist(list).size();
+    DUMP_FUNCTION
+    return try_([&]() -> int
+    {
+        if (list == 0) return 0;
+        else return get_slist(list).size();
+    });
 }
 const char * clang_complete_string_list_at(clang_complete_string_list list, int index)
 {
-    if (list == 0) return nullptr;
-    else return get_slist(list).at(index).c_str();
+    DUMP_FUNCTION
+    return try_([&]() -> const char *
+    {
+        if (list == 0) return nullptr;
+        else return get_slist(list).at(index).c_str();
+    });
 }
 
 clang_complete_string_list clang_complete_get_completions(
@@ -851,64 +943,93 @@ clang_complete_string_list clang_complete_get_completions(
         const char * buffer, 
         unsigned len)
 {
-    auto tu = get_tu(filename, args, argv, 200);
-    if (tu == nullptr) return empty_slist();
-    else return export_slist_completion(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
+    DUMP_FUNCTION
+    return try_([&]
+    {
+        auto tu = get_tu(filename, args, argv, 200);
+        if (tu == nullptr) return empty_slist();
+        else return export_slist_completion(tu->async_complete_at(line, col, prefix, timeout, buffer, len));
+    });
 }
 
 clang_complete_string_list clang_complete_find_uses(const char * filename, const char ** args, int argv, unsigned line, unsigned col, const char * search)
 {
-    auto tu = get_tu(filename, args, argv);
+    DUMP_FUNCTION
+    return try_([&]
+    {
+        auto tu = get_tu(filename, args, argv);
 
-    return export_slist(tu->find_uses_in(line, col, search));
+        return export_slist(tu->find_uses_in(line, col, search));
+    });    
 }
 
 clang_complete_string_list clang_complete_get_diagnostics(const char * filename, const char ** args, int argv)
 {
-    auto tu = get_tu(filename, args, argv, 200);
-    if (tu == nullptr) return empty_slist();
-    else
+    DUMP_FUNCTION
+    return try_([&]
     {
-        tu->reparse(nullptr, 0);
-        return export_slist(tu->get_diagnostics(250));
-    }
+        auto tu = get_tu(filename, args, argv, 200);
+        if (tu == nullptr) return empty_slist();
+        else
+        {
+            tu->reparse(nullptr, 0);
+            return export_slist(tu->get_diagnostics(250));
+        }
+    });
 }
 
 clang_complete_string clang_complete_get_definition(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
-    auto tu = get_tu(filename, args, argv);
+    DUMP_FUNCTION
+    return try_([&]
+    {
+        auto tu = get_tu(filename, args, argv);
 
-    return new_string(tu->get_definition(line, col));
+        return new_string(tu->get_definition(line, col));
+    });
 }
 
 clang_complete_string clang_complete_get_type(const char * filename, const char ** args, int argv, unsigned line, unsigned col)
 {
-    auto tu = get_tu(filename, args, argv);
+    DUMP_FUNCTION
+    return try_([&] 
+    {
+        auto tu = get_tu(filename, args, argv);
 
-    return new_string(tu->get_type(line, col));
+        return new_string(tu->get_type(line, col));
+    });
 }
 
 void clang_complete_reparse(const char * filename, const char ** args, int argv, const char * buffer, unsigned len)
 {
-    auto tu = get_tu(filename, args, argv);
-    tu->reparse();
+    DUMP_FUNCTION
+    try_void([&] 
+    {
+        auto tu = get_tu(filename, args, argv);
+        tu->reparse();
+    });
 }
 
 void clang_complete_free_tu(const char * filename)
 {
-    std::string name = filename;
-    detach_async([=]
+    DUMP_FUNCTION
+    try_void([&]
     {
-        std::lock_guard<std::timed_mutex> lock(tus_mutex);
-        if (tus.find(name) != tus.end())
+        std::string name = filename;
+        detach_async([=]
         {
-            tus.erase(name);
-        }
+            std::lock_guard<std::timed_mutex> lock(tus_mutex);
+            if (tus.find(name) != tus.end())
+            {
+                tus.erase(name);
+            }
+        });
     });
 }
 
 void clang_complete_free_all()
 {
+    DUMP_FUNCTION
     std::lock_guard<std::timed_mutex> lock(tus_mutex);
     tus.clear();
     get_index(true);
