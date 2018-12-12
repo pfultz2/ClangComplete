@@ -513,6 +513,8 @@ public:
                     break;
                 }
             });
+            if (starts_with(replacement.c_str(), "endl"))
+                replacement = "endl";
             display.append("\t").append(description);
             // Lower priority for completions that start with `operator` and `~`
             if (starts_with(display.c_str(), "operator") or starts_with(display.c_str(), "~")) priority = std::numeric_limits<decltype(priority)>::max();
