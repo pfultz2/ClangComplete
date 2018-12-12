@@ -3,6 +3,10 @@ CXXFLAGS=-std=gnu++0x
 
 CLANG_PREFIX=$(shell \
 	(cd /usr/local/include/clang-c/ && cd ../.. && pwd) 2> /dev/null || \
+	(cd /usr/lib/llvm-9.0/ && pwd) 2> /dev/null || \
+	(cd /usr/lib/llvm-8.0/ && pwd) 2> /dev/null || \
+	(cd /usr/lib/llvm-7.0/ && pwd) 2> /dev/null || \
+	(cd /usr/lib/llvm-6.0/ && pwd) 2> /dev/null || \
 	(cd /usr/lib/llvm-5.0/ && pwd) 2> /dev/null || \
 	(cd /usr/lib/llvm-4.0/ && pwd) 2> /dev/null || \
 	(cd /usr/lib/llvm-3.6/ && pwd) 2> /dev/null || \
