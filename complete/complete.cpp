@@ -484,9 +484,12 @@ public:
                 case CXCompletionChunk_Colon:
                 case CXCompletionChunk_Comma:
                 case CXCompletionChunk_HorizontalSpace:
-                case CXCompletionChunk_VerticalSpace:
                     display += text;
                     replacement += text;
+                    break;
+                case CXCompletionChunk_VerticalSpace:
+                    display += ' ';
+                    replacement += ' ';
                     break;
                 case CXCompletionChunk_TypedText:
                     display += text;
@@ -498,6 +501,12 @@ public:
                     }
                     break;
                 case CXCompletionChunk_Placeholder:
+                    // Add a space after curly brace
+                    if (display.back() == '{')
+                    {
+                        display += ' ';
+                        replacement += ' ';
+                    }
                     display += text;
                     std::snprintf(buf, 1024, "%lu", idx++);
                     replacement.append("${").append(buf).append(":").append(text).append("}");
@@ -517,7 +526,8 @@ public:
                 replacement = "endl";
             display.append("\t").append(description);
             // Lower priority for completions that start with `operator` and `~`
-            if (starts_with(display.c_str(), "operator") or starts_with(display.c_str(), "~")) priority = std::numeric_limits<decltype(priority)>::max();
+            if (starts_with(display.c_str(), "operator") or starts_with(display.c_str(), "~"))
+                priority = std::numeric_limits<decltype(priority)>::max();
             if (not display.empty() and not replacement.empty() and starts_with(display.c_str(), prefix)) 
                 results.emplace_back(priority, std::move(display), std::move(replacement));
         }
